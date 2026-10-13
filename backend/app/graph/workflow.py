@@ -3,6 +3,7 @@ from langgraph.graph import END, START, StateGraph
 
 from app.graph.nodes import (
     critic_node,
+    gemini_scriptwriter_node,
     research_node,
     revise_script_node,
     scriptwriter_node,
@@ -11,7 +12,6 @@ from app.graph.state import VideoState
 
 
 def route_after_critique(state: VideoState) -> str:
-    """Choose whether to finish, revise, or stop at the revision limit."""
     if state["approved"]:
         return "approved"
 
@@ -21,19 +21,15 @@ def route_after_critique(state: VideoState) -> str:
     return "revise"
 
 
-def build_graph(checkpointer=None):
-    """Build and compile the video workflow.
-
-    Args:
-        checkpointer: Optional LangGraph checkpointer for saving workflow state.
-
-    Returns:
-        A compiled LangGraph workflow.
-    """
+def build_graph(checkpointer=None, use_llm: bool = False):
+    """Build the graph with either Gemini or the deterministic scriptwriter."""
     graph = StateGraph(VideoState)
 
     graph.add_node("research", research_node)
-    graph.add_node("scriptwriter", scriptwriter_node)
+
+    writer = gemini_scriptwriter_node if use_llm else scriptwriter_node
+    graph.add_node("scriptwriter", writer)
+
     graph.add_node("critic", critic_node)
     graph.add_node("revise_script", revise_script_node)
 

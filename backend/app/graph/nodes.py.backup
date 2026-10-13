@@ -1,0 +1,140 @@
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+from app.graph.state import VideoState
+
+# Load backend/.env regardless of the terminal's working directory.
+BACKEND_DIR = Path(__file__).resolve().parents[2]
+load_dotenv(BACKEND_DIR / ".env")
+
+
+def research_node(state: VideoState) -> dict:
+    """Provide explicitly labelled placeholder research."""
+    return {
+        "research_notes": [
+            (
+                f"Research is pending for: {state['topic']}. "
+                "This is demonstration data, not a verified fact."
+            )
+        ]
+    }
+
+
+def scriptwriter_node(state: VideoState) -> dict:
+    """Create a deterministic draft without calling an external model."""
+    topic = state["topic"]
+
+    return {
+        "script": (
+            f"Today we will explain {topic}. "
+            "We will introduce the main idea, explain how it works, "
+            "and summarize what viewers should remember."
+        )
+    }
+
+
+def gemini_scriptwriter_node(state: VideoState) -> dict:
+    """Generate an explainer script using Google's Gemini API."""
+    api_key = os.getenv("GEMINI_API_KEY")
+    model = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
+
+    if not api_key or api_key == "your_actual_api_key_here":
+        raise RuntimeError(
+            "GEMINI_API_KEY is missing. Add your key to backend/.env."
+        )
+
+    from google import genai
+    from google.genai import types
+
+    research_notes = "\n".join(state["research_notes"])
+
+    system_instruction = """
+You are an explainer-video scriptwriter.
+
+Write an engaging, accurate, easy-to-follow script for a general audience.
+Start the script with the word "Imagine".
+Aim for approximately 100 to 150 words.
+Use simple language and a logical sequence.
+Explain unfamiliar terms clearly.
+Do not invent statistics, quotations, or citations.
+Research notes may be placeholders and must not be treated as verified facts.
+If the available notes do not establish a fact, avoid presenting it as verified.
+Return only the script, without a title or commentary.
+""".strip()
+
+    prompt = (
+        f"Topic: {state['topic']}\n\n"
+        f"Available research notes:\n{research_notes}\n\n"
+        "Write the explainer-video script."
+    )
+
+    try:
+        with genai.Client(api_key=api_key) as client:
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    temperature=0.4,
+                    max_output_tokens=1200,
+                ),
+            )
+    except Exception as exc:
+        raise RuntimeError(
+            "Gemini script generation failed. Check your API key, "
+            "model access, internet connection, and API quota. "
+            f"Details: {exc}"
+        ) from exc
+
+    script = (response.text or "").strip()
+
+    if not script:
+        raise RuntimeError(
+            "Gemini returned an empty script. Try the request again."
+        )
+
+    return {"script": script}
+
+
+def critic_node(state: VideoState) -> dict:
+    """Apply the current demonstration hook-quality rule."""
+    script = state["script"]
+
+    if not script.startswith("Imagine"):
+        return {
+            "critique": (
+                "The opening needs a stronger curiosity-driven hook."
+            ),
+            "approved": False,
+        }
+
+    return {
+        "critique": "The hook passed the demonstration quality check.",
+        "approved": True,
+    }
+
+
+def revise_script_node(state: VideoState) -> dict:
+    """Apply the current deterministic revision rule."""
+    script = state["script"]
+    topic = state["topic"]
+
+    if state["revision_count"] >= 2:
+        return {
+            "critique": "Revision limit reached.",
+            "approved": False,
+        }
+
+    remainder = script.split(". ", 1)
+
+    revised_script = (
+        f"Imagine discovering something surprising about {topic}. "
+        + (remainder[1] if len(remainder) > 1 else "")
+    )
+
+    return {
+        "script": revised_script,
+        "revision_count": state["revision_count"] + 1,
+    }
