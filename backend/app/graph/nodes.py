@@ -16,11 +16,13 @@ USER_AGENT = "ExplainerVideoAgent/0.1 (educational research prototype)"
 
 
 
+import re
+
 STOP_WORDS = {
-    "a", "an", "and", "are", "as", "at", "by", "does", "for",
+    "a", "an", "and", "are", "as", "at", "by", "does", "do", "for",
     "from", "how", "in", "into", "is", "it", "of", "on", "or",
     "the", "to", "what", "when", "where", "which", "who", "why",
-    "with", "work", "works",
+    "with", "work", "works", "explain", "explained", "understand",
 }
 
 TOPIC_CONCEPTS = {
@@ -43,33 +45,55 @@ TOPIC_CONCEPTS = {
 }
 
 
+def _normalize_words(text: str) -> list[str]:
+    """Normalize text into simple searchable word forms."""
+    words = re.findall(r"[a-z0-9]+", text.lower())
+    normalized = []
+
+    for word in words:
+        # Basic plural handling: networks -> network, vaccines -> vaccine.
+        if len(word) > 4 and word.endswith("ies"):
+            word = word[:-3] + "y"
+        elif len(word) > 3 and word.endswith("s") and not word.endswith("ss"):
+            word = word[:-1]
+
+        if word not in STOP_WORDS:
+            normalized.append(word)
+
+    return normalized
+
+
 def is_relevant_source(topic: str, title: str, summary: str) -> bool:
-    """Conservatively filter sources for known topics and title relevance."""
+    """Check whether a research source matches the topic."""
     normalized_topic = " ".join(topic.lower().split())
-    title_lower = title.lower()
-    summary_lower = summary.lower()
-    combined = f"{title_lower} {summary_lower}"
+    title_lower = " ".join(title.lower().split())
+    combined = f"{title_lower} {summary.lower()}"
 
-    for known_topic, concepts in TOPIC_CONCEPTS.items():
-        if known_topic in normalized_topic:
-            # Accept an exact topic match in the article title, or a
-            # related article that contains a topic-specific concept.
-            return (
-                known_topic == title_lower.strip()
-                or any(concept in combined for concept in concepts)
-            )
+    topic_words = set(_normalize_words(topic))
+    title_words = set(_normalize_words(title))
+    content_words = set(_normalize_words(combined))
 
-    topic_words = {
-        word.strip(".,?!:;()").lower()
-        for word in topic.split()
-        if word.strip(".,?!:;()").lower() not in STOP_WORDS
-    }
+    if not topic_words or not title_words:
+        return False
 
-    if not topic_words:
+    # Accept an exact match or a title made entirely of topic keywords.
+    if title_words == topic_words:
         return True
 
-    # For general topics, require a meaningful topic word in the title.
-    return any(word in title_lower for word in topic_words)
+    if title_words.issubset(topic_words) and len(title_words) >= 2:
+        return True
+
+    # Special handling prevents unrelated solar articles from passing.
+    for known_topic, concepts in TOPIC_CONCEPTS.items():
+        if known_topic in normalized_topic:
+            return any(concept in combined for concept in concepts)
+
+    # General relevance check for other topics.
+    matched_words = topic_words & content_words
+    required_matches = max(1, (len(topic_words) * 2 + 2) // 3)
+
+    return len(matched_words) >= required_matches
+
 
 
 def research_node(state: VideoState) -> dict:
