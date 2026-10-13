@@ -1,0 +1,39 @@
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.coverage
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# Generated video assets
+media/
+renders/
+generated/
+*.mp4
+*.wav
+*.mp3
+
+# Node / Remotion (future frontend)
+node_modules/
+dist/
+build/
+.next/
+coverage/
+
+# Editor and operating system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
