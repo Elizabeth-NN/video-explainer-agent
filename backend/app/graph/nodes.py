@@ -1,30 +1,186 @@
 
 import os
 from pathlib import Path
+from urllib.parse import quote
 
+import requests
 from dotenv import load_dotenv
 
 from app.graph.state import VideoState
 
-# Load the backend/.env file regardless of the directory used to run Python.
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 load_dotenv(BACKEND_DIR / ".env")
 
+WIKIPEDIA_API = "https://en.wikipedia.org/w/api.php"
+USER_AGENT = "ExplainerVideoAgent/0.1 (educational research prototype)"
+
+
+
+STOP_WORDS = {
+    "a", "an", "and", "are", "as", "at", "by", "does", "for",
+    "from", "how", "in", "into", "is", "it", "of", "on", "or",
+    "the", "to", "what", "when", "where", "which", "who", "why",
+    "with", "work", "works",
+}
+
+TOPIC_CONCEPTS = {
+    "solar energy": {
+        "photovoltaic",
+        "solar panel",
+        "solar power",
+        "solar electricity",
+        "solar thermal",
+        "concentrated solar",
+        "renewable energy",
+    },
+    "solar power": {
+        "photovoltaic",
+        "solar panel",
+        "solar power",
+        "solar electricity",
+        "concentrated solar",
+    },
+}
+
+
+def is_relevant_source(topic: str, title: str, summary: str) -> bool:
+    """Conservatively filter sources for known topics and title relevance."""
+    normalized_topic = " ".join(topic.lower().split())
+    title_lower = title.lower()
+    summary_lower = summary.lower()
+    combined = f"{title_lower} {summary_lower}"
+
+    for known_topic, concepts in TOPIC_CONCEPTS.items():
+        if known_topic in normalized_topic:
+            # Accept an exact topic match in the article title, or a
+            # related article that contains a topic-specific concept.
+            return (
+                known_topic == title_lower.strip()
+                or any(concept in combined for concept in concepts)
+            )
+
+    topic_words = {
+        word.strip(".,?!:;()").lower()
+        for word in topic.split()
+        if word.strip(".,?!:;()").lower() not in STOP_WORDS
+    }
+
+    if not topic_words:
+        return True
+
+    # For general topics, require a meaningful topic word in the title.
+    return any(word in title_lower for word in topic_words)
+
 
 def research_node(state: VideoState) -> dict:
-    """Placeholder research until source-backed research is implemented."""
-    return {
-        "research_notes": [
-            (
-                f"Research is pending for: {state['topic']}. "
-                "This is demonstration data, not a verified fact."
+    """Retrieve Wikipedia article summaries and their source URLs."""
+    topic = state["topic"].strip()
+
+    if not topic:
+        raise ValueError("The research topic cannot be empty.")
+
+    try:
+        response = requests.get(
+            WIKIPEDIA_API,
+            params={
+                "action": "query",
+                "list": "search",
+                "srsearch": topic,
+                "srlimit": 3,
+                "format": "json",
+            },
+            headers={"User-Agent": USER_AGENT},
+            timeout=15,
+        )
+        response.raise_for_status()
+        results = response.json()["query"]["search"]
+
+        if not results:
+            raise RuntimeError(
+                f"No Wikipedia articles were found for: {topic}"
+            )
+
+        sources = []
+
+        for result in results:
+            title = result["title"]
+            page_url = (
+                "https://en.wikipedia.org/wiki/"
+                + quote(title.replace(" ", "_"), safe="()_")
+            )
+
+            try:
+                summary_response = requests.get(
+                    "https://en.wikipedia.org/api/rest_v1/page/summary/"
+                    + quote(title.replace(" ", "_"), safe="()_"),
+                    headers={"User-Agent": USER_AGENT},
+                    timeout=15,
+                )
+                summary_response.raise_for_status()
+                page = summary_response.json()
+
+                summary = page.get("extract", "").strip()
+                if not summary:
+                    continue
+
+                sources.append(
+                    {
+                        "title": title,
+                        "url": page.get("content_urls", {})
+                        .get("desktop", {})
+                        .get("page", page_url),
+                        "summary": summary,
+                    }
+                )
+
+            except requests.RequestException:
+                # Skip an unavailable article and try the next result.
+                continue
+
+        if not sources:
+            raise RuntimeError(
+                "Wikipedia search returned results, but no article "
+                "summaries could be retrieved. Check your connection "
+                "and try again."
+            )
+
+        
+        sources = [
+            source
+            for source in sources
+            if is_relevant_source(
+                topic,
+                source["title"],
+                source["summary"],
             )
         ]
-    }
+
+        if not sources:
+            raise RuntimeError(
+                "No sufficiently relevant research sources were found. "
+                "Try a more specific topic."
+            )
+
+        research_notes = [
+            f"{source['title']}: {source['summary']}"
+            for source in sources
+        ]
+
+
+        return {
+            "research_notes": research_notes,
+            "research_sources": sources,
+        }
+
+    except requests.RequestException as exc:
+        raise RuntimeError(
+            "Research failed while contacting Wikipedia. "
+            "Check your internet connection and try again."
+        ) from exc
 
 
 def scriptwriter_node(state: VideoState) -> dict:
-    """Deterministic scriptwriter for testing without API calls."""
+    """Deterministic scriptwriter for tests without API calls."""
     topic = state["topic"]
     return {
         "script": (
@@ -36,7 +192,7 @@ def scriptwriter_node(state: VideoState) -> dict:
 
 
 def gemini_scriptwriter_node(state: VideoState) -> dict:
-    """Generate an explainer script using Google's Gemini API."""
+    """Generate a script grounded in the retrieved research notes."""
     api_key = os.getenv("GEMINI_API_KEY")
     model = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
 
@@ -48,26 +204,39 @@ def gemini_scriptwriter_node(state: VideoState) -> dict:
     from google import genai
     from google.genai import types
 
-    research_notes = "\n".join(state["research_notes"])
+    sources = state.get("research_sources", [])
+    evidence = "\n\n".join(
+        f"Source: {source['title']}\n"
+        f"URL: {source['url']}\n"
+        f"Summary: {source['summary']}"
+        for source in sources
+    )
+
+    if not evidence:
+        raise RuntimeError(
+            "No research sources are available. "
+            "Run the research node before generating a script."
+        )
 
     system_instruction = """
 You are an explainer-video scriptwriter.
 
-Write an engaging, clear explainer script for a general audience.
-Start the script with the word "Imagine".
+Write an engaging, clear script for a general audience.
+Start with a curiosity-driven hook beginning with "Imagine".
 Aim for approximately 100–150 words.
 Use simple language and a logical sequence.
-Explain unfamiliar terms clearly.
+Use only factual claims reasonably supported by the supplied sources.
 Do not invent statistics, quotations, sources, or citations.
-The supplied research notes may be placeholders, not verified facts.
-Do not present unsupported claims as verified facts.
+The supplied sources may contain errors; do not claim they independently
+verify every fact.
+If evidence is insufficient, avoid unsupported details.
 Return only the script, without a title or extra commentary.
 """.strip()
 
     prompt = (
         f"Topic: {state['topic']}\n\n"
-        f"Available research notes:\n{research_notes}\n\n"
-        "Write the explainer-video script."
+        f"Research from Wikipedia:\n{evidence}\n\n"
+        "Write the explainer-video script using this evidence."
     )
 
     try:
@@ -99,14 +268,13 @@ Return only the script, without a title or extra commentary.
 
 
 def critic_node(state: VideoState) -> dict:
-    """Basic quality check; this is not a full fact-check."""
+    """Basic opening-hook check, not a factual verification."""
     script = state["script"]
 
     if not script.startswith("Imagine"):
         return {
             "critique": (
-                "The opening needs a stronger curiosity-driven hook "
-                "beginning with 'Imagine'."
+                "The opening needs a stronger curiosity-driven hook."
             ),
             "approved": False,
         }

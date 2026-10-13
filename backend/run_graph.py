@@ -8,14 +8,12 @@ def main():
     parser = argparse.ArgumentParser(
         description="Generate an explainer-video script."
     )
-
     parser.add_argument(
         "topic",
         nargs="?",
         default="How vaccines work",
         help="Topic to explain in the video.",
     )
-
     parser.add_argument(
         "--gemini",
         action="store_true",
@@ -23,12 +21,12 @@ def main():
     )
 
     args = parser.parse_args()
-
     graph = build_graph(use_llm=args.gemini)
 
     initial_state = {
         "topic": args.topic,
         "research_notes": [],
+        "research_sources": [],
         "script": "",
         "critique": "",
         "approved": False,
@@ -48,11 +46,21 @@ def main():
     print(f"Revisions: {result['revision_count']}")
     print(f"Approved: {result['approved']}")
     print(f"Critique: {result['critique']}")
-    print(f"\nScript:\n{result['script']}")
 
-    print("\nResearch notes:")
-    for note in result["research_notes"]:
-        print(f"- {note}")
+    print(f"\n=== GENERATED SCRIPT ===\n{result['script']}")
+
+    print("\n=== RESEARCH SOURCES ===")
+    sources = result.get("research_sources", [])
+
+    if not sources:
+        print("No sources were returned.")
+    else:
+        for index, source in enumerate(sources, start=1):
+            print(f"\n{index}. {source['title']}")
+            print(f"   URL: {source['url']}")
+            print(f"   Summary: {source['summary']}")
+
+    print("\nNote: Source retrieval does not independently verify every claim.")
 
 
 if __name__ == "__main__":
