@@ -37,3 +37,23 @@ coverage/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Local LangGraph checkpoints
+*.sqlite
+*.sqlite3
+*.db
+
+# Generated files
+.DS_Store
