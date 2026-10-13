@@ -1,5 +1,7 @@
 
+import json
 import os
+import re
 from pathlib import Path
 from urllib.parse import quote
 
@@ -15,8 +17,46 @@ WIKIPEDIA_API = "https://en.wikipedia.org/w/api.php"
 USER_AGENT = "ExplainerVideoAgent/0.1 (educational research prototype)"
 
 
+JOINED_WORD_FIXES = {
+    "conversionofenergy": "conversion of energy",
+    "solarelectricity": "solar electricity",
+    "understandingthe": "understanding the",
+    "ofenergy": "of energy",
+    "toa": "to a",
+    "lightand": "light and",
+    "suchas": "such as",
+    "andresearch": "and research",
+    "useto": "use to",
+    "fromsunlight": "from sunlight",
+    "sunlightinto": "sunlight into",
+    "annualpower": "annual power",
+    "solarpower": "solar power",
+    "naturallycirculate": "naturally circulate",
+    "intoelectricity": "into electricity",
+    "fromthe": "from the",
+    "forthe": "for the",
+    "circuitand": "circuit and",
+    "assolar": "as solar",
+    "arebroadly": "are broadly",
+}
 
-import re
+
+def clean_research_text(text: str) -> str:
+    """Repair known joined-word issues in retrieved research summaries."""
+    text = re.sub(r"\s+", " ", text).strip()
+
+    for joined, corrected in JOINED_WORD_FIXES.items():
+        text = re.sub(
+            rf"\b{re.escape(joined)}\b",
+            corrected,
+            text,
+            flags=re.IGNORECASE,
+        )
+
+    text = re.sub(r",(?=\S)", ", ", text)
+    text = re.sub(r"(?<=[A-Za-z])\(", " (", text)
+    return text
+
 
 STOP_WORDS = {
     "a", "an", "and", "are", "as", "at", "by", "does", "do", "for",
@@ -96,6 +136,81 @@ def is_relevant_source(topic: str, title: str, summary: str) -> bool:
 
 
 
+def gemini_relevance_filter(
+    topic: str,
+    candidates: list[dict],
+) -> list[dict] | None:
+    """Judge candidate relevance in one Gemini request.
+
+    Return relevant candidates, an empty list if none qualify, or None
+    if Gemini is unavailable or its response cannot be processed.
+    """
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key or not api_key.strip() or not candidates:
+        return None
+
+    from google import genai
+    from google.genai import types
+
+    candidate_data = [
+        {
+            "index": index,
+            "title": source["title"],
+            "summary": source["summary"][:1200],
+        }
+        for index, source in enumerate(candidates)
+    ]
+
+    prompt = (
+        "Decide which candidate Wikipedia articles are directly relevant "
+        "to the user's research topic. Relevance means the article helps "
+        "explain or answer the topic, not merely that it shares a word. "
+        "Reject tangential articles. Use only the supplied titles and "
+        "summaries. Return JSON with one field named relevant_indices, "
+        "containing the zero-based integer indices of relevant articles. "
+        "If none are relevant, return an empty list.\n\n"
+        f"Topic: {topic}\n\n"
+        f"Candidates: {json.dumps(candidate_data, ensure_ascii=False)}"
+    )
+
+    try:
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model=os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite"),
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0,
+                max_output_tokens=300,
+            ),
+        )
+
+        data = json.loads(response.text or "")
+        indices = data.get("relevant_indices")
+
+        if not isinstance(indices, list):
+            return None
+
+        selected = []
+        seen = set()
+
+        for index in indices:
+            if (
+                isinstance(index, int)
+                and not isinstance(index, bool)
+                and 0 <= index < len(candidates)
+                and index not in seen
+            ):
+                selected.append(candidates[index])
+                seen.add(index)
+
+        return selected
+
+    except Exception:
+        # Preserve the keyword-filter results if Gemini fails.
+        return None
+
+
 def research_node(state: VideoState) -> dict:
     """Retrieve Wikipedia article summaries and their source URLs."""
     topic = state["topic"].strip()
@@ -110,7 +225,7 @@ def research_node(state: VideoState) -> dict:
                 "action": "query",
                 "list": "search",
                 "srsearch": topic,
-                "srlimit": 3,
+                "srlimit": 5,
                 "format": "json",
             },
             headers={"User-Agent": USER_AGENT},
@@ -143,7 +258,7 @@ def research_node(state: VideoState) -> dict:
                 summary_response.raise_for_status()
                 page = summary_response.json()
 
-                summary = page.get("extract", "").strip()
+                summary = clean_research_text(page.get("extract", ""))
                 if not summary:
                     continue
 
@@ -169,9 +284,11 @@ def research_node(state: VideoState) -> dict:
             )
 
         
+        candidates = sources
+
         sources = [
             source
-            for source in sources
+            for source in candidates
             if is_relevant_source(
                 topic,
                 source["title"],
@@ -179,10 +296,16 @@ def research_node(state: VideoState) -> dict:
             )
         ]
 
+        # Ask Gemini only when the keyword filter finds fewer than two.
+        if len(sources) < 2:
+            judged_sources = gemini_relevance_filter(topic, candidates)
+            if judged_sources is not None:
+                sources = judged_sources
+
         if not sources:
             raise RuntimeError(
                 "No sufficiently relevant research sources were found. "
-                "Try a more specific topic."
+                "Try a more specific topic or check the research results."
             )
 
         research_notes = [
@@ -204,21 +327,69 @@ def research_node(state: VideoState) -> dict:
 
 
 def scriptwriter_node(state: VideoState) -> dict:
-    """Generate a deterministic demonstration script for tests."""
-    topic = state["topic"]
-    script = (
-        f"Today we will explore {topic} step by step. "
-        "First, we will define the main idea and explain why it matters "
-        "in everyday life. Next, we will look at the key parts of the "
-        "process and how they work together. We will connect those parts "
-        "to a simple example, so the explanation is easier to follow. "
-        "We will also point out a common misunderstanding and clarify "
-        "what the available research can and cannot tell us. "
-        "By the end, you should be able to describe the basic idea, "
-        "recognize its main steps, and ask better questions about the "
-        "details. Remember, this overview is a starting point, not a "
-        "substitute for checking reliable sources."
-    )
+    """Build a concise explainer script grounded in retrieved summaries."""
+    topic = state["topic"].strip()
+    if not topic:
+        raise ValueError("A topic is required to write the script.")
+
+    sources = state.get("research_sources", [])
+    if not sources:
+        raise RuntimeError(
+            "No research sources are available for the fallback writer."
+        )
+
+    def excerpt(source: dict, max_words: int = 24) -> str:
+        summary = clean_research_text(source["summary"])
+        sentences = re.split(r"(?<=[.!?])\s+", summary)
+        first_sentence = sentences[0] if sentences else summary
+        words = first_sentence.split()
+        result = " ".join(words[:max_words]).strip()
+
+        if result and result[-1] not in ".!?":
+            result += "..."
+
+        return result
+
+    display_topic = topic
+    if display_topic[-1] not in ".!?":
+        display_topic += "."
+
+    first = sources[0]
+    script_parts = [
+        f"Imagine exploring this question: {display_topic}",
+        (
+            f"One useful starting point is {first['title']}. "
+            f"Its summary explains: {excerpt(first)}"
+        ),
+        (
+            "The source summary identifies the central idea, but it may "
+            "not describe every step needed for a complete explanation. "
+            "We should distinguish what the sources state from what still "
+            "needs confirmation."
+        ),
+    ]
+
+    if len(sources) > 1:
+        second = sources[1]
+        script_parts.append(
+            f"A second source, {second['title']}, adds: {excerpt(second)}"
+        )
+
+    script_parts.extend([
+        (
+            "Together, these sources provide a starting point for "
+            "understanding the topic. Comparing their explanations can "
+            "show which details are shared and which need closer reading."
+        ),
+        (
+            "Before publication, check the full articles and verify "
+            " important claims. Research summaries help guide the "
+            "explanation, but they are not proof that every detail "
+            "has been independently verified."
+        ),
+    ])
+
+    script = re.sub(r"\s+", " ", " ".join(script_parts)).strip()
     return {"script": script}
 
 
@@ -339,7 +510,6 @@ def critic_node(state: VideoState) -> dict:
         ),
         "approved": True,
     }
-
 
 def revise_script_node(state: VideoState) -> dict:
     """Apply a simple deterministic revision."""
