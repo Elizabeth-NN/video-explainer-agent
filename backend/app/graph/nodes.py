@@ -180,15 +180,22 @@ def research_node(state: VideoState) -> dict:
 
 
 def scriptwriter_node(state: VideoState) -> dict:
-    """Deterministic scriptwriter for tests without API calls."""
+    """Generate a deterministic demonstration script for tests."""
     topic = state["topic"]
-    return {
-        "script": (
-            f"Today we will explain {topic}. "
-            "We will introduce the main idea, explain how it works, "
-            "and summarize what viewers should remember."
-        )
-    }
+    script = (
+        f"Today we will explore {topic} step by step. "
+        "First, we will define the main idea and explain why it matters "
+        "in everyday life. Next, we will look at the key parts of the "
+        "process and how they work together. We will connect those parts "
+        "to a simple example, so the explanation is easier to follow. "
+        "We will also point out a common misunderstanding and clarify "
+        "what the available research can and cannot tell us. "
+        "By the end, you should be able to describe the basic idea, "
+        "recognize its main steps, and ask better questions about the "
+        "details. Remember, this overview is a starting point, not a "
+        "substitute for checking reliable sources."
+    )
+    return {"script": script}
 
 
 def gemini_scriptwriter_node(state: VideoState) -> dict:
@@ -268,19 +275,44 @@ Return only the script, without a title or extra commentary.
 
 
 def critic_node(state: VideoState) -> dict:
-    """Basic opening-hook check, not a factual verification."""
-    script = state["script"]
+    """Check basic script quality without making another API call."""
+    script = state["script"].strip()
+    words = script.split()
+    issues = []
 
     if not script.startswith("Imagine"):
+        issues.append(
+            "Start with a curiosity-driven hook beginning with 'Imagine'."
+        )
+
+    if not 80 <= len(words) <= 180:
+        issues.append(
+            f"The script must contain 80–180 words; it currently has "
+            f"{len(words)}."
+        )
+
+    if not state.get("research_sources"):
+        issues.append(
+            "At least one research source is required before approval."
+        )
+
+    if len(words) < 10:
+        issues.append(
+            "The script needs enough meaningful content to explain the topic."
+        )
+
+    if issues:
         return {
-            "critique": (
-                "The opening needs a stronger curiosity-driven hook."
-            ),
+            "critique": " ".join(issues),
             "approved": False,
         }
 
     return {
-        "critique": "The hook passed the demonstration quality check.",
+        "critique": (
+            f"Basic quality checks passed: opening hook, "
+            f"{len(words)} words, and research sources present. "
+            "Factual accuracy has not been independently verified."
+        ),
         "approved": True,
     }
 

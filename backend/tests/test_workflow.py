@@ -44,15 +44,22 @@ def initial_state(topic="How vaccines work"):
 
 def test_graph_revises_and_approves_script():
     graph = build_graph()
+    state = initial_state()
+    state["research_sources"] = [
+        {
+            "title": "Test source",
+            "url": "https://example.com/research",
+            "summary": "A source used to test the workflow.",
+        }
+    ]
 
-    result = graph.invoke(initial_state())
+    result = graph.invoke(state)
 
     assert result["approved"] is True
     assert result["revision_count"] == 1
     assert result["script"].startswith("Imagine")
-    assert result["critique"] == (
-        "The hook passed the demonstration quality check."
-    )
+    assert 80 <= len(result["script"].split()) <= 180
+    assert "Basic quality checks passed" in result["critique"]
 
 
 def test_research_returns_source_titles_urls_and_summaries():
