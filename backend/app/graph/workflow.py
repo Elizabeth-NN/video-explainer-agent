@@ -11,6 +11,7 @@ from app.graph.state import VideoState
 
 
 def route_after_critique(state: VideoState) -> str:
+    """Choose whether to finish, revise, or stop at the revision limit."""
     if state["approved"]:
         return "approved"
 
@@ -20,7 +21,15 @@ def route_after_critique(state: VideoState) -> str:
     return "revise"
 
 
-def build_graph():
+def build_graph(checkpointer=None):
+    """Build and compile the video workflow.
+
+    Args:
+        checkpointer: Optional LangGraph checkpointer for saving workflow state.
+
+    Returns:
+        A compiled LangGraph workflow.
+    """
     graph = StateGraph(VideoState)
 
     graph.add_node("research", research_node)
@@ -44,4 +53,4 @@ def build_graph():
 
     graph.add_edge("revise_script", "critic")
 
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)
