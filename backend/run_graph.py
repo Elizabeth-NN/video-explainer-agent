@@ -1,7 +1,8 @@
-
 import argparse
+import asyncio
 
 from app.graph.workflow import build_graph
+from app.services.narration import DEFAULT_VOICE, generate_narration
 
 
 def main():
@@ -18,6 +19,21 @@ def main():
         "--gemini",
         action="store_true",
         help="Use Google's Gemini API to generate the script.",
+    )
+    parser.add_argument(
+        "--audio",
+        action="store_true",
+        help="Generate MP3 narration for an approved script.",
+    )
+    parser.add_argument(
+        "--voice",
+        default=DEFAULT_VOICE,
+        help=f"Edge TTS voice (default: {DEFAULT_VOICE}).",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default="generated/narration",
+        help="Directory for generated audio and manifest files.",
     )
 
     args = parser.parse_args()
@@ -84,6 +100,31 @@ def main():
             f"\nTotal estimated duration: "
             f"{minutes} min {seconds} sec"
         )
+
+    if args.audio:
+        if not result.get("approved", False):
+            print("\nAudio skipped: the script has not been approved.")
+        elif not scenes:
+            print("\nAudio skipped: there are no scenes to narrate.")
+        else:
+            print("\n=== GENERATING NARRATION AUDIO ===")
+            manifest = asyncio.run(
+                generate_narration(
+                    scenes=scenes,
+                    output_dir=args.output_dir,
+                    voice=args.voice,
+                )
+            )
+            print(f"Audio directory: {args.output_dir}")
+            print(f"Combined audio: {manifest['combined_audio_file']}")
+            print(
+                "Actual audio duration: "
+                f"{manifest['total_audio_duration_seconds']} seconds"
+            )
+            print(
+                f"Scene audio files generated: {manifest['scene_count']}"
+            )
+            print("Manifest: manifest.json")
 
     print("\nNote: Source retrieval does not independently verify every claim.")
 
