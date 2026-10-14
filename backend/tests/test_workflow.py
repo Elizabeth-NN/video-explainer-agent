@@ -334,3 +334,111 @@ def test_clean_research_text_repairs_solar_summary_phrases():
     assert "light and heat" in result
     assert "such as solar electricity" in result
     assert "annual power generation" in result
+
+def test_expand_research_queries_for_vaccines():
+    from app.graph.nodes import expand_research_queries
+
+    queries = expand_research_queries("How vaccines work")
+
+    assert queries[0] == "How vaccines work"
+    assert "Vaccine" in queries
+    assert "Immune system" in queries
+    assert "mRNA vaccine" in queries
+
+
+def test_expand_research_queries_for_solar_energy():
+    from app.graph.nodes import expand_research_queries
+
+    queries = expand_research_queries("How does solar energy work?")
+
+    assert queries[0] == "How does solar energy work?"
+    assert "Solar power" in queries
+    assert "Photovoltaics" in queries
+    assert "Solar panel" in queries
+
+
+def test_expand_research_queries_deduplicates_and_preserves_order():
+    from app.graph.nodes import expand_research_queries
+
+    queries = expand_research_queries("Vaccine")
+
+    assert queries[0] == "Vaccine"
+    assert len(queries) == len({query.casefold() for query in queries})
+
+
+def test_expand_research_queries_keeps_unknown_topics():
+    from app.graph.nodes import expand_research_queries
+
+    assert expand_research_queries("How volcanoes erupt") == [
+        "How volcanoes erupt"
+    ]
+
+
+def test_research_expands_queries_when_sources_are_insufficient(monkeypatch):
+    import requests
+    from app.graph.nodes import research_node
+
+    search_queries = []
+    summary_titles = []
+
+    def fake_get(url, **kwargs):
+        if url == "https://en.wikipedia.org/w/api.php":
+            query = kwargs["params"]["srsearch"]
+            search_queries.append(query)
+
+            if query == "How vaccines work":
+                results = [{"title": "Unrelated Topic"}]
+            elif query == "Vaccine":
+                results = [
+                    {"title": "Vaccine"},
+                    {"title": "Immune system"},
+                    {"title": "Vaccine"},
+                ]
+            else:
+                results = []
+
+            response = type("Response", (), {})()
+            response.raise_for_status = lambda: None
+            response.json = lambda: {"query": {"search": results}}
+            return response
+
+        title = url.rsplit("/", 1)[-1].replace("_", " ")
+        summary_titles.append(title)
+
+        summaries = {
+            "Unrelated Topic": "An unrelated subject with no vaccine information.",
+            "Vaccine": (
+                "A vaccine trains the immune system to recognize "
+                "a pathogen and can provide immune protection."
+            ),
+            "Immune system": (
+                "The immune system protects the body from pathogens "
+                "using immune cells and antibodies."
+            ),
+        }
+
+        response = type("Response", (), {})()
+        response.raise_for_status = lambda: None
+        response.json = lambda: {
+            "extract": summaries[title],
+            "content_urls": {
+                "desktop": {"page": f"https://en.wikipedia.org/wiki/{title}"}
+            },
+        }
+        return response
+
+    monkeypatch.setattr("app.graph.nodes.requests.get", fake_get)
+    monkeypatch.setattr(
+        "app.graph.nodes.gemini_relevance_filter",
+        lambda topic, candidates: None,
+    )
+
+    result = research_node({"topic": "How vaccines work"})
+
+    assert search_queries[:2] == ["How vaccines work", "Vaccine"]
+    assert len(result["research_sources"]) >= 2
+
+    source_titles = [item["title"] for item in result["research_sources"]]
+    assert len(source_titles) == len(set(source_titles))
+    assert "Vaccine" in source_titles
+    assert "Immune system" in source_titles

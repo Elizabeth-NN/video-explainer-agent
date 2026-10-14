@@ -220,96 +220,182 @@ def gemini_relevance_filter(
         return None
 
 
+def expand_research_queries(topic: str) -> list[str]:
+    """Return the original topic followed by useful related searches."""
+    normalized = " ".join(topic.lower().split())
+    queries = [topic.strip()]
+
+    related_queries = {
+        "vaccine": [
+            "Vaccine",
+            "Immune system",
+            "Antibody",
+            "mRNA vaccine",
+        ],
+        "vaccination": [
+            "Vaccine",
+            "Immune system",
+            "Antibody",
+            "mRNA vaccine",
+        ],
+        "solar energy": [
+            "Solar energy",
+            "Solar power",
+            "Photovoltaics",
+            "Solar panel",
+        ],
+        "solar power": [
+            "Solar energy",
+            "Solar power",
+            "Photovoltaics",
+            "Solar panel",
+        ],
+        "api": [
+            "Application programming interface",
+            "Representational state transfer",
+            "HTTP",
+        ],
+    }
+
+    for key, related in related_queries.items():
+        if key in normalized:
+            queries.extend(related)
+            break
+
+    # Preserve order and remove duplicate queries.
+    unique_queries = []
+    seen = set()
+
+    for query in queries:
+        cleaned = query.strip()
+        key = cleaned.casefold()
+        if cleaned and key not in seen:
+            unique_queries.append(cleaned)
+            seen.add(key)
+
+    return unique_queries
+
+
 def research_node(state: VideoState) -> dict:
-    """Retrieve Wikipedia article summaries and their source URLs."""
+    """Retrieve relevant Wikipedia summaries with expanded search."""
     topic = state["topic"].strip()
 
     if not topic:
         raise ValueError("The research topic cannot be empty.")
 
     try:
-        response = requests.get(
-            WIKIPEDIA_API,
-            params={
-                "action": "query",
-                "list": "search",
-                "srsearch": topic,
-                "srlimit": 10,
-                "format": "json",
-            },
-            headers={"User-Agent": USER_AGENT},
-            timeout=15,
-        )
-        response.raise_for_status()
-        results = response.json()["query"]["search"]
+        queries = expand_research_queries(topic)
+        candidates = []
+        seen_titles = set()
 
-        if not results:
-            raise RuntimeError(
-                f"No Wikipedia articles were found for: {topic}"
-            )
+        def fetch_summaries(search_results: list[dict]) -> None:
+            """Add unique article summaries to candidates."""
+            for result in search_results:
+                title = result["title"]
+                title_key = " ".join(title.casefold().split())
 
-        sources = []
-
-        for result in results:
-            title = result["title"]
-            page_url = (
-                "https://en.wikipedia.org/wiki/"
-                + quote(title.replace(" ", "_"), safe="()_")
-            )
-
-            try:
-                summary_response = requests.get(
-                    "https://en.wikipedia.org/api/rest_v1/page/summary/"
-                    + quote(title.replace(" ", "_"), safe="()_"),
-                    headers={"User-Agent": USER_AGENT},
-                    timeout=15,
-                )
-                summary_response.raise_for_status()
-                page = summary_response.json()
-
-                summary = clean_research_text(page.get("extract", ""))
-                if not summary:
+                if title_key in seen_titles:
                     continue
 
-                sources.append(
-                    {
-                        "title": title,
-                        "url": page.get("content_urls", {})
-                        .get("desktop", {})
-                        .get("page", page_url),
-                        "summary": summary,
-                    }
+                # Mark titles before fetching to avoid retrying duplicates.
+                seen_titles.add(title_key)
+
+                page_url = (
+                    "https://en.wikipedia.org/wiki/"
+                    + quote(title.replace(" ", "_"), safe="()_")
                 )
 
+                try:
+                    summary_response = requests.get(
+                        "https://en.wikipedia.org/api/rest_v1/page/summary/"
+                        + quote(title.replace(" ", "_"), safe="()_"),
+                        headers={"User-Agent": USER_AGENT},
+                        timeout=15,
+                    )
+                    summary_response.raise_for_status()
+                    page = summary_response.json()
+
+                    summary = clean_research_text(
+                        page.get("extract", "")
+                    )
+                    if not summary:
+                        continue
+
+                    candidates.append(
+                        {
+                            "title": title,
+                            "url": page.get("content_urls", {})
+                            .get("desktop", {})
+                            .get("page", page_url),
+                            "summary": summary,
+                        }
+                    )
+
+                except requests.RequestException:
+                    # Skip an unavailable article and continue.
+                    continue
+
+        def search_wikipedia(query: str) -> list[dict]:
+            response = requests.get(
+                WIKIPEDIA_API,
+                params={
+                    "action": "query",
+                    "list": "search",
+                    "srsearch": query,
+                    "srlimit": 10,
+                    "format": "json",
+                },
+                headers={"User-Agent": USER_AGENT},
+                timeout=15,
+            )
+            response.raise_for_status()
+            return response.json()["query"]["search"]
+
+        # Always search the user's original topic first.
+        initial_results = search_wikipedia(queries[0])
+
+        if not initial_results:
+            # Related searches may still find useful material.
+            print(f"No direct Wikipedia results for: {topic}")
+
+        fetch_summaries(initial_results)
+
+        def relevant_sources() -> list[dict]:
+            return [
+                item
+                for item in candidates
+                if is_relevant_source(
+                    topic, item["title"], item["summary"]
+                )
+            ]
+
+        sources = relevant_sources()
+
+        # Expand only when the original search yields fewer than two
+        # keyword-relevant summaries.
+        for query in queries[1:]:
+            if len(sources) >= 2:
+                break
+
+            try:
+                related_results = search_wikipedia(query)
             except requests.RequestException:
-                # Skip an unavailable article and try the next result.
                 continue
 
-        if not sources:
-            raise RuntimeError(
-                "Wikipedia search returned results, but no article "
-                "summaries could be retrieved. Check your connection "
-                "and try again."
-            )
+            fetch_summaries(related_results)
+            sources = relevant_sources()
 
-        
-        candidates = sources
-
-        sources = [
-            source
-            for source in candidates
-            if is_relevant_source(
-                topic,
-                source["title"],
-                source["summary"],
-            )
-        ]
-
-        # Ask Gemini only when the keyword filter finds fewer than two.
+        # Use Gemini as a fallback if keyword filtering is insufficient.
         if len(sources) < 2:
             judged_sources = gemini_relevance_filter(topic, candidates)
             if judged_sources is not None:
                 sources = judged_sources
+
+        if not candidates:
+            raise RuntimeError(
+                "Wikipedia search returned no usable article summaries. "
+                "Check your connection and try again."
+            )
 
         if not sources:
             raise RuntimeError(
@@ -318,10 +404,9 @@ def research_node(state: VideoState) -> dict:
             )
 
         research_notes = [
-            f"{source['title']}: {source['summary']}"
-            for source in sources
+            f"{item['title']}: {item['summary']}"
+            for item in sources
         ]
-
 
         return {
             "research_notes": research_notes,
