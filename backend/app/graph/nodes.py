@@ -234,7 +234,7 @@ def research_node(state: VideoState) -> dict:
                 "action": "query",
                 "list": "search",
                 "srsearch": topic,
-                "srlimit": 5,
+                "srlimit": 10,
                 "format": "json",
             },
             headers={"User-Agent": USER_AGENT},
