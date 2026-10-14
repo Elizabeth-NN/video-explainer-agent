@@ -733,10 +733,21 @@ If evidence is insufficient, avoid unsupported details.
 Return only the script, without a title or extra commentary.
 """.strip()
 
+    critique = state.get("critique", "").strip()
+    revision_instructions = (
+        f"Revise the previous script to address this critic feedback:\n"
+        f"{critique}\n\n"
+        if critique
+        else ""
+    )
+
     prompt = (
         f"Topic: {state['topic']}\n\n"
         f"Research from Wikipedia:\n{evidence}\n\n"
-        "Write the explainer-video script using this evidence."
+        f"{revision_instructions}"
+        "Write the explainer-video script using this evidence. "
+        "If revising, correct the identified issues while keeping "
+        "supported factual claims and following all script requirements."
     )
 
     try:
@@ -968,7 +979,7 @@ def critic_node(state: VideoState) -> dict:
     }
 
 
-def revise_script_node(state: VideoState) -> dict:
+def revise_script_node(state: VideoState, writer=None) -> dict:
     """Rebuild a rejected script from the available research."""
     if state["revision_count"] >= 2:
         return {
@@ -983,8 +994,10 @@ def revise_script_node(state: VideoState) -> dict:
             "approved": False,
         }
 
-    # Rebuild rather than preserve sentences flagged by the critic.
-    revised = scriptwriter_node(state)
+    # Use the workflow's selected writer; retain deterministic default
+    # behavior for direct calls and existing tests.
+    selected_writer = writer or scriptwriter_node
+    revised = selected_writer(state)
 
     return {
         "script": revised["script"],

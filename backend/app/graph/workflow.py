@@ -34,7 +34,10 @@ def build_graph(checkpointer=None, use_llm: bool = False):
     graph.add_node("scriptwriter", writer)
 
     graph.add_node("critic", critic_node)
-    graph.add_node("revise_script", revise_script_node)
+    graph.add_node(
+        "revise_script",
+        lambda state: revise_script_node(state, writer=writer),
+    )
 
     graph.add_edge(START, "research")
     graph.add_edge("research", "scriptwriter")

@@ -994,3 +994,55 @@ def test_critic_reports_supported_claim_matches():
     assert result["approved"] is True
     assert "supported match(es)" in result["critique"]
     assert "0 unsupported match(es)" in result["critique"]
+
+
+def test_llm_workflow_uses_selected_writer_for_revision():
+    from unittest.mock import patch
+
+    from app.graph.workflow import build_graph
+
+    state = initial_state()
+    state["topic"] = "How vaccines work"
+
+    research_result = {
+        "research_quality": "limited",
+        "research_sources": [
+            {
+                "title": "Vaccine overview",
+                "url": "https://example.com/vaccines",
+                "summary": "Vaccines train the immune system to recognize pathogens.",
+            }
+        ],
+        "research_notes": ["Vaccines help prepare the immune system."],
+    }
+
+    with (
+        patch(
+            "app.graph.workflow.research_node",
+            return_value=research_result,
+        ),
+        patch(
+            "app.graph.workflow.gemini_scriptwriter_node",
+            side_effect=[
+                {"script": "First draft."},
+                {"script": "Revised draft."},
+            ],
+        ) as gemini_writer,
+        patch(
+            "app.graph.workflow.critic_node",
+            side_effect=[
+                {"approved": False, "critique": "Fix the first draft."},
+                {"approved": True, "critique": "Approved."},
+            ],
+        ),
+    ):
+        result = build_graph(use_llm=True).invoke(state)
+
+    assert gemini_writer.call_count == 2
+    assert (
+        gemini_writer.call_args_list[1].args[0]["critique"]
+        == "Fix the first draft."
+    )
+    assert result["script"] == "Revised draft."
+    assert result["revision_count"] == 1
+    assert result["approved"] is True
