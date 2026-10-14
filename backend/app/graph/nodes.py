@@ -3,7 +3,7 @@ import json
 import os
 import re
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit, urlunsplit
 
 import requests
 from dotenv import load_dotenv
@@ -276,6 +276,94 @@ def expand_research_queries(topic: str) -> list[str]:
     return unique_queries
 
 
+def normalize_source_url(value: object) -> str | None:
+    """Return a normalized HTTP(S) URL for safe source deduplication."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+
+    try:
+        parsed = urlsplit(value.strip())
+        scheme = parsed.scheme.casefold()
+        hostname = parsed.hostname
+        port = parsed.port
+    except ValueError:
+        return None
+
+    if scheme not in {"http", "https"} or not hostname:
+        return None
+
+    hostname = hostname.casefold()
+    if ":" in hostname and not hostname.startswith("["):
+        hostname = f"[{hostname}]"
+
+    netloc = hostname
+    if port and not (
+        (scheme == "http" and port == 80)
+        or (scheme == "https" and port == 443)
+    ):
+        netloc = f"{netloc}:{port}"
+
+    path = parsed.path.rstrip("/") or "/"
+    return urlunsplit((scheme, netloc, path, parsed.query, ""))
+
+
+def deduplicate_valid_sources(sources: list[dict]) -> list[dict]:
+    """Keep only usable sources with distinct titles, URLs, and summaries."""
+    unique = []
+    seen_titles = set()
+    seen_urls = set()
+    seen_summaries = set()
+
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+
+        title = source.get("title")
+        summary = source.get("summary")
+        url = source.get("url")
+
+        if not isinstance(title, str) or not isinstance(summary, str):
+            continue
+
+        title = title.strip()
+        summary = summary.strip()
+        normalized_url = normalize_source_url(url)
+
+        if not title or not summary or normalized_url is None:
+            continue
+
+        title_key = " ".join(title.casefold().split())
+        summary_key = " ".join(summary.casefold().split())
+
+        if (
+            title_key in seen_titles
+            or normalized_url in seen_urls
+            or summary_key in seen_summaries
+        ):
+            continue
+
+        seen_titles.add(title_key)
+        seen_urls.add(normalized_url)
+        seen_summaries.add(summary_key)
+
+        unique.append({
+            "title": title,
+            "url": url.strip(),
+            "summary": summary,
+        })
+
+    return unique
+
+
+def classify_research_quality(source_count: int) -> str:
+    """Classify research coverage by the number of relevant sources."""
+    if source_count < 2:
+        return "insufficient"
+    if source_count == 2:
+        return "limited"
+    return "adequate"
+
+
 def research_node(state: VideoState) -> dict:
     """Retrieve relevant Wikipedia summaries with expanded search."""
     topic = state["topic"].strip()
@@ -289,15 +377,22 @@ def research_node(state: VideoState) -> dict:
         seen_titles = set()
 
         def fetch_summaries(search_results: list[dict]) -> None:
-            """Add unique article summaries to candidates."""
+            """Fetch summaries while skipping malformed search results."""
             for result in search_results:
-                title = result["title"]
-                title_key = " ".join(title.casefold().split())
-
-                if title_key in seen_titles:
+                if not isinstance(result, dict):
                     continue
 
-                # Mark titles before fetching to avoid retrying duplicates.
+                title = result.get("title")
+                if not isinstance(title, str) or not title.strip():
+                    continue
+
+                title = title.strip()
+                title_key = " ".join(title.casefold().split())
+
+                if not title_key or title_key in seen_titles:
+                    continue
+
+                # Avoid refetching the same article across related searches.
                 seen_titles.add(title_key)
 
                 page_url = (
@@ -315,24 +410,47 @@ def research_node(state: VideoState) -> dict:
                     summary_response.raise_for_status()
                     page = summary_response.json()
 
-                    summary = clean_research_text(
-                        page.get("extract", "")
-                    )
+                    if not isinstance(page, dict):
+                        continue
+
+                    extract = page.get("extract", "")
+                    if not isinstance(extract, str):
+                        continue
+
+                    summary = clean_research_text(extract)
                     if not summary:
                         continue
 
-                    candidates.append(
-                        {
-                            "title": title,
-                            "url": page.get("content_urls", {})
-                            .get("desktop", {})
-                            .get("page", page_url),
-                            "summary": summary,
-                        }
+                    content_urls = page.get("content_urls", {})
+                    desktop = (
+                        content_urls.get("desktop", {})
+                        if isinstance(content_urls, dict)
+                        else {}
+                    )
+                    candidate_url = (
+                        desktop.get("page")
+                        if isinstance(desktop, dict)
+                        else None
                     )
 
-                except requests.RequestException:
-                    # Skip an unavailable article and continue.
+                    # Fall back to the title-derived Wikipedia URL if needed.
+                    url = (
+                        candidate_url
+                        if normalize_source_url(candidate_url)
+                        else page_url
+                    )
+
+                    if normalize_source_url(url) is None:
+                        continue
+
+                    candidates.append({
+                        "title": title,
+                        "url": url,
+                        "summary": summary,
+                    })
+
+                except (requests.RequestException, ValueError):
+                    # Skip unavailable or malformed article responses.
                     continue
 
         def search_wikipedia(query: str) -> list[dict]:
@@ -361,13 +479,14 @@ def research_node(state: VideoState) -> dict:
         fetch_summaries(initial_results)
 
         def relevant_sources() -> list[dict]:
-            return [
+            matches = [
                 item
                 for item in candidates
                 if is_relevant_source(
                     topic, item["title"], item["summary"]
                 )
             ]
+            return deduplicate_valid_sources(matches)
 
         sources = relevant_sources()
 
@@ -387,9 +506,11 @@ def research_node(state: VideoState) -> dict:
 
         # Use Gemini as a fallback if keyword filtering is insufficient.
         if len(sources) < 2:
-            judged_sources = gemini_relevance_filter(topic, candidates)
+            judged_sources = gemini_relevance_filter(
+                topic, deduplicate_valid_sources(candidates)
+            )
             if judged_sources is not None:
-                sources = judged_sources
+                sources = deduplicate_valid_sources(judged_sources)
 
         if not candidates:
             raise RuntimeError(
@@ -411,6 +532,7 @@ def research_node(state: VideoState) -> dict:
         return {
             "research_notes": research_notes,
             "research_sources": sources,
+            "research_quality": classify_research_quality(len(sources)),
         }
 
     except requests.RequestException as exc:
@@ -501,23 +623,21 @@ def scriptwriter_node(state: VideoState) -> dict:
 
     if "vaccine" in normalized_topic or "vaccination" in normalized_topic:
         script = (
-            "Imagine giving your immune system a head start against a disease. "
-            "That is the idea behind vaccination. A vaccine helps the body "
-            "learn to recognize a disease-causing pathogen before it encounters "
-            "the real threat. Depending on the vaccine, it may contain a "
-            "weakened or inactivated germ, a harmless part of it, or another "
-            "way to present information about the pathogen. These components "
-            "can act as antigens, which the immune system learns to recognize. "
-            "The body can then develop an immune response, including antibodies "
-            "that help target the threat. Some immune cells also retain a memory "
-            "of what they encountered. If the same pathogen appears later, the "
-            "immune system may recognize it and respond more quickly. Different "
-            "vaccines work in different ways, and protection varies by vaccine "
-            "and person. The central idea is preparation: vaccination gives "
-            "the immune system a chance to learn before a dangerous infection "
-            "occurs. The research sources for this explanation include "
-            + ", ".join(source["title"] for source in sources[:3])
-            + "."
+            "Imagine preparing your immune system to recognize a threat "
+            "before encountering it. Vaccines are biological preparations "
+            "that help provide active acquired immunity against a particular "
+            "disease. A vaccine typically contains an agent that resembles "
+            "a disease-causing microorganism, such as a weakened or killed "
+            "microbe or one of its surface proteins. The vaccine stimulates "
+            "the immune system to recognize that agent as a threat. This "
+            "can help the body respond when it encounters the corresponding "
+            "microorganism in the future. For example, an mRNA vaccine uses "
+            "messenger RNA as a blueprint for cells to produce a protein "
+            "that stimulates an adaptive immune response. A conjugate "
+            "vaccine combines a weak antigen with a stronger carrier antigen "
+            "to improve the immune response. The central idea is preparation: "
+            "vaccines use different approaches to help the immune system "
+            "recognize a specific threat."
         )
         return {"script": script}
 
@@ -666,6 +786,21 @@ def critic_node(state: VideoState) -> dict:
         )
 
     sources = state.get("research_sources", [])
+    research_quality = state.get("research_quality", "unknown")
+    research_warning = ""
+
+    if research_quality == "insufficient":
+        issues.append(
+            "Research coverage is insufficient: fewer than two relevant "
+            "sources are available. Additional research is required "
+            "before this script can be approved."
+        )
+    elif research_quality == "limited":
+        research_warning = (
+            "Research coverage is limited to two relevant sources; "
+            "verify key claims against the full sources before publication."
+        )
+
     if not sources:
         issues.append(
             "At least one research source is required before approval."
@@ -725,21 +860,16 @@ def critic_node(state: VideoState) -> dict:
             "The script does not clearly cover the requested topic."
         )
 
-    source_text = " ".join(
-        f"{item.get('title', '')} {item.get('summary', '')}"
-        for item in sources
-    )
-    source_terms = content_terms(source_text)
-
     sentences = [
         sentence.strip()
         for sentence in re.split(r"(?<=[.!?])\s+", script)
         if sentence.strip()
     ]
     unsupported = []
+    weak_claims = []
+    supported_count = 0
 
-    # These are explanatory transitions or research limitations, not
-    # standalone factual claims that can be judged by word overlap.
+    # These are explanatory transitions, not standalone factual claims.
     non_claim_prefixes = (
         "together, these details help explain",
         "to understand the process,",
@@ -747,8 +877,11 @@ def critic_node(state: VideoState) -> dict:
         "these connections help turn",
         "the retrieved summaries provide a starting point",
         "the full sources should be consulted",
+        "read together, these details show how the retrieved evidence relates to",
     )
 
+    # Compare each claim with each source separately. This prevents
+    # unrelated terms spread across sources from inflating support.
     if sources:
         for sentence in sentences:
             sentence_words = sentence.split()
@@ -761,31 +894,76 @@ def critic_node(state: VideoState) -> dict:
             if len(sentence_words) < 8 or len(sentence_terms) < 3:
                 continue
 
-            overlap = sentence_terms & source_terms
-            if not overlap:
+            best_overlap = 0
+            best_ratio = 0.0
+
+            for source in sources:
+                source_terms_for_claim = content_terms(
+                    f"{source.get('title', '')} "
+                    f"{source.get('summary', '')}"
+                )
+                overlap = sentence_terms & source_terms_for_claim
+                ratio = len(overlap) / len(sentence_terms)
+
+                if (ratio, len(overlap)) > (best_ratio, best_overlap):
+                    best_ratio = ratio
+                    best_overlap = len(overlap)
+
+            if best_overlap >= 2 and best_ratio >= 0.35:
+                supported_count += 1
+            elif best_overlap >= 2 and best_ratio >= 0.15:
+                weak_claims.append(sentence)
+            else:
                 unsupported.append(sentence)
+
+    evidence_warning = ""
+    if weak_claims:
+        examples = " ".join(weak_claims[:2])
+        evidence_warning = (
+            f"Evidence review required: {len(weak_claims)} substantive "
+            "sentence(s) have weak source matches. This may reflect "
+            "paraphrasing or missing evidence; it is not proof the claims "
+            f"are false. Example: {examples}"
+        )
 
     if unsupported:
         examples = " ".join(unsupported[:2])
         issues.append(
             f"{len(unsupported)} substantive sentence(s) have limited "
-            "word overlap with the retrieved sources. Review their "
-            f"evidence before approval. Example: {examples}"
+            "word overlap with any individual source. Their evidence "
+            "could not be matched reliably; revise or verify them before "
+            f"approval. Example: {examples}"
         )
 
     if issues:
+        critique = " ".join(issues)
+        if research_warning:
+            critique = f"{critique} {research_warning}"
+        if evidence_warning:
+            critique = f"{critique} {evidence_warning}"
         return {
-            "critique": " ".join(issues),
+            "critique": critique,
             "approved": False,
         }
 
+    critique = (
+        f"Structural and evidence-overlap checks passed: opening hook, "
+        f"{len(words)} words, topic coverage, and research sources "
+        "present. Text overlap is only a screening signal; factual "
+        "accuracy has not been independently verified."
+    )
+    critique += (
+        f" Evidence screening: {supported_count} supported match(es), "
+        f"{len(weak_claims)} weak match(es), "
+        f"{len(unsupported)} unsupported match(es)."
+    )
+    if evidence_warning:
+        critique = f"{critique} {evidence_warning}"
+    if research_warning:
+        critique = f"{critique} {research_warning}"
+
     return {
-        "critique": (
-            f"Structural and evidence-overlap checks passed: opening hook, "
-            f"{len(words)} words, topic coverage, and research sources "
-            "present. Text overlap is only a screening signal; factual "
-            "accuracy has not been independently verified."
-        ),
+        "critique": critique,
         "approved": True,
     }
 

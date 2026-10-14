@@ -15,6 +15,9 @@ def route_after_critique(state: VideoState) -> str:
     if state["approved"]:
         return "approved"
 
+    if state.get("research_quality") == "insufficient":
+        return "insufficient_research"
+
     if state["revision_count"] >= 2:
         return "failed"
 
@@ -42,6 +45,7 @@ def build_graph(checkpointer=None, use_llm: bool = False):
         route_after_critique,
         {
             "approved": END,
+            "insufficient_research": END,
             "revise": "revise_script",
             "failed": END,
         },

@@ -27,6 +27,7 @@ def main():
         "topic": args.topic,
         "research_notes": [],
         "research_sources": [],
+        "research_quality": "insufficient",
         "script": "",
         "critique": "",
         "approved": False,
@@ -44,6 +45,7 @@ def main():
     print(f"Topic: {result['topic']}")
     print(f"Scriptwriter: {writer}")
     print(f"Revisions: {result['revision_count']}")
+    print(f"Research quality: {result.get('research_quality', 'unknown')}")
     print(f"Approved: {result['approved']}")
     print(f"Critique: {result['critique']}")
 

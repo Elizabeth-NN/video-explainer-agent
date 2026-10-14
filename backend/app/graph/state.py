@@ -1,5 +1,4 @@
-
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 
 class ResearchSource(TypedDict):
@@ -12,6 +11,7 @@ class VideoState(TypedDict):
     topic: str
     research_notes: list[str]
     research_sources: list[ResearchSource]
+    research_quality: Literal["insufficient", "limited", "adequate"]
     script: str
     critique: str
     approved: bool
