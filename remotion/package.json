@@ -1,0 +1,22 @@
+{
+  "name": "video-explainer-remotion",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "studio": "node scripts/prepare.mjs && remotion studio src/index.ts",
+    "preview": "node scripts/prepare.mjs && remotion still src/index.ts Explainer out/preview.png --frame=72 --props=./input-props.json --concurrency=1",
+    "render": "node scripts/prepare.mjs && remotion render src/index.ts Explainer out/explainer.mp4 --props=./input-props.json --concurrency=1"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.535",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "remotion": "^4.0.535"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "typescript": "^7.0.2"
+  }
+}

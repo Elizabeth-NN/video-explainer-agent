@@ -61,7 +61,7 @@ def test_generate_narration_creates_audio_and_manifest(tmp_path: Path):
         )
 
     assert result["scene_count"] == 2
-    assert result["voice"] == "en-US-AriaNeural"
+    assert result["voice"] == "en-US-JennyNeural"
     assert result["total_audio_duration_seconds"] == 5.0
     assert result["combined_audio_file"] == "narration.mp3"
 

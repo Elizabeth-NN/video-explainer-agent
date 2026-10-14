@@ -1,0 +1,415 @@
+import React from "react";
+import {
+  AbsoluteFill,
+  Audio,
+  Sequence,
+  interpolate,
+  spring,
+  staticFile,
+  useCurrentFrame,
+  useVideoConfig,
+} from "remotion";
+
+export type ExplainerScene = {
+  sceneNumber: number;
+  narration: string;
+  visualDescription: string;
+  audioFile: string;
+  durationInFrames: number;
+  from: number;
+};
+
+export type ExplainerProps = {
+  topic: string;
+  fps: number;
+  width: number;
+  height: number;
+  scenes: ExplainerScene[];
+};
+
+const C = {
+  bg: "#0B1220",
+  panel: "#121B2E",
+  panel2: "#17233A",
+  border: "#293953",
+  text: "#F4F6FA",
+  muted: "#A6B0C2",
+  teal: "#4FD1C5",
+  maroon: "#8D212A",
+  gold: "#F2B84B",
+};
+
+const vaccineStages = [
+  ["01", "RECOGNIZE", "Meet a harmless signal"],
+  ["02", "RESPOND", "Activate immune defenses"],
+  ["03", "REMEMBER", "Prepare for the future"],
+];
+
+const processStages = [
+  ["01", "INPUT", "A signal or problem"],
+  ["02", "PROCESS", "A response takes shape"],
+  ["03", "OUTCOME", "A meaningful result"],
+];
+
+const shortTitle = (scene: ExplainerScene, topic: string) => {
+  const text = `${topic} ${scene.narration}`.toLowerCase();
+
+  if (text.includes("mrna") || text.includes("messenger rna")) {
+    return "A molecular blueprint";
+  }
+  if (text.includes("conjugate")) return "Two parts, one response";
+  if (text.includes("memory")) return "Preparing for the future";
+  if (text.includes("antibody") || text.includes("antigen")) {
+    return "Recognition in action";
+  }
+  if (text.includes("vaccine") || text.includes("immune")) {
+    return "How protection develops";
+  }
+  if (text.includes("data") || text.includes("analysis")) {
+    return "Turning data into insight";
+  }
+  if (text.includes("software") || text.includes("system")) {
+    return "Inside the system";
+  }
+  return `The key idea — ${String(scene.sceneNumber).padStart(2, "0")}`;
+};
+
+const VaccineDiagram: React.FC<{ frame: number }> = ({ frame }) => {
+  const reveal = spring({ frame, fps: 24, config: { damping: 18 } });
+  const movingDot = interpolate(frame, [0, 90], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  const pulse = 1 + 0.06 * Math.sin(frame / 7);
+
+  return (
+    <svg viewBox="0 0 1000 350" width="100%" height="100%">
+      <defs>
+        <linearGradient id="cellGlow" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#4FD1C5" stopOpacity=".30" />
+          <stop offset="100%" stopColor="#4FD1C5" stopOpacity=".04" />
+        </linearGradient>
+        <linearGradient id="virusGlow" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#F2B84B" stopOpacity=".9" />
+          <stop offset="100%" stopColor="#8D212A" stopOpacity=".9" />
+        </linearGradient>
+      </defs>
+
+      <g opacity={reveal}>
+        <circle cx="265" cy="155" r={104 * pulse} fill="url(#cellGlow)" />
+        <circle cx="265" cy="155" r="79" fill="#102E3B" stroke={C.teal} strokeWidth="3" />
+        <circle cx="265" cy="155" r="48" fill="#4FD1C5" fillOpacity=".12" stroke={C.teal} strokeOpacity=".65" strokeWidth="2" />
+        <circle cx="250" cy="143" r="13" fill={C.teal} fillOpacity=".9" />
+        <circle cx="282" cy="174" r="8" fill={C.gold} />
+        <circle cx="294" cy="133" r="5" fill={C.teal} />
+
+        {Array.from({ length: 12 }, (_, i) => {
+          const angle = (i * Math.PI * 2) / 12;
+          const x1 = 265 + Math.cos(angle) * 79;
+          const y1 = 155 + Math.sin(angle) * 79;
+          const x2 = 265 + Math.cos(angle) * 96;
+          const y2 = 155 + Math.sin(angle) * 96;
+          return (
+            <line
+              key={i}
+              x1={x1}
+              y1={y1}
+              x2={x2}
+              y2={y2}
+              stroke={C.teal}
+              strokeWidth="4"
+              strokeLinecap="round"
+            />
+          );
+        })}
+
+        <path
+          d="M 390 155 C 460 85, 515 225, 590 155"
+          fill="none"
+          stroke={C.teal}
+          strokeWidth="3"
+          strokeDasharray="8 10"
+          opacity=".8"
+        />
+        <circle
+          cx={390 + movingDot * 200}
+          cy={155 + Math.sin(movingDot * Math.PI * 2) * 27}
+          r="9"
+          fill={C.gold}
+        />
+
+        <g transform={`translate(730 155) rotate(${frame * 0.45})`}>
+          {Array.from({ length: 10 }, (_, i) => (
+            <line
+              key={i}
+              x1="0"
+              y1="-48"
+              x2="0"
+              y2="-68"
+              transform={`rotate(${i * 36})`}
+              stroke={C.gold}
+              strokeWidth="5"
+              strokeLinecap="round"
+            />
+          ))}
+          <circle r="48" fill="url(#virusGlow)" />
+          <circle cx="-13" cy="-10" r="9" fill="#F8D7A0" />
+          <circle cx="15" cy="12" r="7" fill="#F8D7A0" />
+          <circle cx="15" cy="-17" r="5" fill="#F8D7A0" />
+        </g>
+
+        <text x="265" y="290" fill={C.teal} fontSize="19" textAnchor="middle" letterSpacing="3">
+          IMMUNE CELL
+        </text>
+        <text x="730" y="290" fill={C.gold} fontSize="19" textAnchor="middle" letterSpacing="3">
+          ANTIGEN
+        </text>
+        <text x="500" y="325" fill={C.muted} fontSize="15" textAnchor="middle" letterSpacing="2">
+          RECOGNITION  ·  RESPONSE  ·  MEMORY
+        </text>
+      </g>
+    </svg>
+  );
+};
+
+const ProcessDiagram: React.FC<{ frame: number }> = ({ frame }) => {
+  const { fps } = useVideoConfig();
+  const stages = processStages;
+
+  return (
+    <svg viewBox="0 0 1000 350" width="100%" height="100%">
+      <path
+        d="M 205 155 L 795 155"
+        fill="none"
+        stroke={C.border}
+        strokeWidth="5"
+        strokeLinecap="round"
+      />
+      {stages.map((stage, index) => {
+        const entrance = spring({
+          frame: frame - index * 12,
+          fps,
+          config: { damping: 16 },
+        });
+        const x = 205 + index * 295;
+        const active = frame >= index * 12;
+        return (
+          <g
+            key={stage[0]}
+            opacity={entrance}
+            transform={`translate(0 ${interpolate(entrance, [0, 1], [28, 0])})`}
+          >
+            <circle
+              cx={x}
+              cy="155"
+              r={58 + (active ? Math.sin(frame / 8 + index) * 3 : 0)}
+              fill={C.panel2}
+              stroke={index === 1 ? C.maroon : C.teal}
+              strokeWidth="3"
+            />
+            <text
+              x={x}
+              y="163"
+              fill={C.text}
+              fontSize="25"
+              textAnchor="middle"
+              fontWeight="700"
+            >
+              {stage[0]}
+            </text>
+            <text
+              x={x}
+              y="255"
+              fill={index === 1 ? "#E8A0A5" : C.teal}
+              fontSize="19"
+              textAnchor="middle"
+              letterSpacing="2"
+            >
+              {stage[1]}
+            </text>
+            <text x={x} y="282" fill={C.muted} fontSize="14" textAnchor="middle">
+              {stage[2]}
+            </text>
+          </g>
+        );
+      })}
+      <circle
+        cx={205 + ((frame * 3) % 590)}
+        cy="155"
+        r="7"
+        fill={C.gold}
+      />
+    </svg>
+  );
+};
+
+const Scene: React.FC<{
+  scene: ExplainerScene;
+  topic: string;
+}> = ({ scene, topic }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const entrance = spring({
+    frame,
+    fps,
+    config: { damping: 18, stiffness: 90 },
+  });
+  const fade = interpolate(
+    frame,
+    [0, 10, scene.durationInFrames - 10, scene.durationInFrames],
+    [0, 1, 1, 0],
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
+  );
+  const text = `${topic} ${scene.narration} ${scene.visualDescription}`.toLowerCase();
+  const isVaccine = [
+    "vaccine", "immune", "immunity", "antigen", "antibody",
+    "microorganism", "mrna", "pathogen",
+  ].some((word) => text.includes(word));
+  const title = shortTitle(scene, topic);
+
+  return (
+    <AbsoluteFill
+      style={{
+        backgroundColor: C.bg,
+        color: C.text,
+        fontFamily: "Arial, Helvetica, sans-serif",
+        opacity: fade,
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          height: 8,
+          width: `${Math.min(100, ((frame + 1) / scene.durationInFrames) * 100)}%`,
+          background: `linear-gradient(90deg, ${C.maroon}, ${C.teal})`,
+        }}
+      />
+
+      <div
+        style={{
+          position: "absolute",
+          top: 40,
+          left: 70,
+          right: 70,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          color: C.muted,
+          fontSize: 16,
+          letterSpacing: 3,
+          textTransform: "uppercase",
+        }}
+      >
+        <span>FIELD NOTES / EXPLAINED</span>
+        <span>
+          SCENE {String(scene.sceneNumber).padStart(2, "0")} / VISUAL STORY
+        </span>
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          top: 105,
+          left: 70,
+          right: 70,
+          transform: `translateY(${interpolate(entrance, [0, 1], [24, 0])}px)`,
+          opacity: entrance,
+        }}
+      >
+        <div
+          style={{
+            color: C.teal,
+            fontSize: 16,
+            letterSpacing: 4,
+            marginBottom: 12,
+            textTransform: "uppercase",
+          }}
+        >
+          {topic}
+        </div>
+        <div
+          style={{
+            fontSize: 42,
+            lineHeight: 1.12,
+            fontWeight: 700,
+            letterSpacing: -1,
+          }}
+        >
+          {title}
+        </div>
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          top: 205,
+          left: 80,
+          right: 80,
+          height: 300,
+        }}
+      >
+        {isVaccine ? (
+          <VaccineDiagram frame={frame} />
+        ) : (
+          <ProcessDiagram frame={frame} />
+        )}
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          left: 70,
+          right: 70,
+          bottom: 48,
+          minHeight: 112,
+          boxSizing: "border-box",
+          padding: "22px 28px",
+          borderRadius: 18,
+          border: `1px solid ${C.border}`,
+          borderLeft: `5px solid ${C.maroon}`,
+          background: C.panel,
+          display: "flex",
+          alignItems: "center",
+          transform: `translateY(${interpolate(entrance, [0, 1], [20, 0])}px)`,
+          opacity: entrance,
+        }}
+      >
+        <div
+          style={{
+            color: C.text,
+            fontSize: 25,
+            lineHeight: 1.4,
+            fontWeight: 500,
+          }}
+        >
+          {scene.narration}
+        </div>
+      </div>
+
+      <Audio src={staticFile(scene.audioFile)} />
+    </AbsoluteFill>
+  );
+};
+
+export const Explainer: React.FC<ExplainerProps> = ({
+  topic,
+  scenes,
+}) => {
+  return (
+    <AbsoluteFill style={{ backgroundColor: C.bg }}>
+      {scenes.map((scene) => (
+        <Sequence
+          key={scene.sceneNumber}
+          from={scene.from}
+          durationInFrames={scene.durationInFrames}
+          name={`Scene ${scene.sceneNumber}`}
+        >
+          <Scene scene={scene} topic={topic} />
+        </Sequence>
+      ))}
+    </AbsoluteFill>
+  );
+};

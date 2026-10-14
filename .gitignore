@@ -57,3 +57,9 @@ venv/
 
 # Generated files
 .DS_Store
+
+# Remotion-generated assets and renders
+remotion/node_modules/
+remotion/public/audio/
+remotion/input-props.json
+remotion/out/

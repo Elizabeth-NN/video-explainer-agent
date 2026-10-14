@@ -7,7 +7,7 @@ from typing import Any
 import edge_tts
 
 
-DEFAULT_VOICE = "en-US-AriaNeural"
+DEFAULT_VOICE = "en-US-JennyNeural"
 
 
 def _run_command(command: list[str], output_dir: Path) -> str:

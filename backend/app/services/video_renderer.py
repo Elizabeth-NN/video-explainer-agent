@@ -58,7 +58,7 @@ def _write_scene_text(
     topic_text = topic.strip() or "Explainer video"
 
     # Wrap text to keep it readable on a 720p frame.
-    narration_text = "\n".join(textwrap.wrap(narration, width=48))
+    narration_text = "\n".join(textwrap.wrap(narration, width=28))
     visual_text = str(scene.get("visual_description", "")).strip()
     visual_text = "\n".join(textwrap.wrap(visual_text, width=55))
 
@@ -73,6 +73,61 @@ def _write_scene_text(
     visual_path.write_text(visual_text, encoding="utf-8")
 
     return narration_path, visual_path
+
+
+
+def _visual_guide(scene: dict[str, Any]) -> tuple[str, tuple[str, str, str]]:
+    """Choose a simple, scene-specific infographic using existing text."""
+    content = (
+        str(scene.get("narration", ""))
+        + " "
+        + str(scene.get("visual_description", ""))
+    ).lower()
+
+    if any(word in content for word in (
+        "vaccine", "immune", "immunity", "pathogen", "antibody", "virus"
+    )):
+        return (
+            "HOW IMMUNITY BUILDS",
+            ("VACCINE SIGNAL", "IMMUNE RESPONSE", "IMMUNE MEMORY"),
+        )
+
+    if any(word in content for word in (
+        "data", "analysis", "analytics", "statistics", "evidence"
+    )):
+        return (
+            "FROM DATA TO INSIGHT",
+            ("COLLECT DATA", "ANALYSE PATTERNS", "USE INSIGHTS"),
+        )
+
+    if any(word in content for word in (
+        "software", "code", "program", "application", "system", "algorithm"
+    )):
+        return (
+            "HOW A SYSTEM WORKS",
+            ("INPUT", "PROCESS", "OUTPUT"),
+        )
+
+    if any(word in content for word in (
+        "business", "customer", "market", "company", "service"
+    )):
+        return (
+            "A SIMPLE WORKFLOW",
+            ("IDENTIFY NEED", "DELIVER SERVICE", "CHECK RESULTS"),
+        )
+
+    if any(word in content for word in (
+        "climate", "environment", "energy", "carbon", "planet"
+    )):
+        return (
+            "UNDERSTANDING THE IMPACT",
+            ("CAUSE", "CHANGE", "CONSEQUENCE"),
+        )
+
+    return (
+        "KEY IDEA",
+        ("THE PROBLEM", "THE MAIN IDEA", "THE OUTCOME"),
+    )
 
 
 def render_video(
@@ -167,8 +222,11 @@ def render_video(
         video_name = f"scene_{number:03d}.mp4"
         video_path = work_dir / video_name
 
-        # Use text files rather than inline text so punctuation and
-        # special characters in narration do not break the filter graph.
+        # Pair the narration with a simple infographic on the right.
+        heading, labels = _visual_guide(scene)
+
+        fade_out_start = max(0.0, duration - 0.35)
+
         filters = (
             f"drawbox=x=0:y=0:w={WIDTH}:h=12:color={ACCENT}:t=fill,"
             f"drawtext=fontfile={FONT_PATH}:textfile={topic_file}:"
@@ -176,11 +234,36 @@ def render_video(
             f"drawtext=fontfile={FONT_PATH}:textfile={title_file}:"
             f"fontcolor={ACCENT}:fontsize=26:x=80:y=122,"
             f"drawtext=fontfile={FONT_PATH}:textfile={narration_file}:"
-            f"fontcolor={TEXT_COLOR}:fontsize=40:line_spacing=18:"
+            f"fontcolor={TEXT_COLOR}:fontsize=34:line_spacing=14:"
             f"x=80:y=(h-text_h)/2,"
             f"drawtext=fontfile={FONT_PATH}:textfile={visual_file}:"
-            f"fontcolor={MUTED_COLOR}:fontsize=17:"
-            f"x=80:y=h-100"
+            f"fontcolor={MUTED_COLOR}:fontsize=17:x=80:y=h-100,"
+            f"drawbox=x=720:y=175:w=480:h=420:"
+            f"color=0x121B2E:t=fill,"
+            f"drawbox=x=720:y=175:w=6:h=420:"
+            f"color={ACCENT}:t=fill,"
+            f"drawtext=fontfile={FONT_PATH}:text='{heading}':"
+            f"fontcolor=white:fontsize=23:x=770:y=210,"
+            f"drawbox=x=770:y=265:w=380:h=54:"
+            f"color=0x1B2940:t=fill,"
+            f"drawtext=fontfile={FONT_PATH}:text='{labels[0]}':"
+            f"fontcolor=white:fontsize=21:x=800:y=282,"
+            f"drawtext=fontfile={FONT_PATH}:text='v':"
+            f"fontcolor={ACCENT}:fontsize=28:x=940:y=330,"
+            f"drawbox=x=770:y=365:w=380:h=54:"
+            f"color=0x1B2940:t=fill,"
+            f"drawtext=fontfile={FONT_PATH}:text='{labels[1]}':"
+            f"fontcolor=white:fontsize=21:x=800:y=382,"
+            f"drawtext=fontfile={FONT_PATH}:text='v':"
+            f"fontcolor={ACCENT}:fontsize=28:x=940:y=430,"
+            f"drawbox=x=770:y=465:w=380:h=54:"
+            f"color=0x1B2940:t=fill,"
+            f"drawtext=fontfile={FONT_PATH}:text='{labels[2]}':"
+            f"fontcolor=white:fontsize=21:x=800:y=482,"
+            f"drawbox=x=80:y=700:w='t*80':h=5:"
+            f"color={ACCENT}:t=fill,"
+            f"fade=t=in:st=0:d=0.25,"
+            f"fade=t=out:st={fade_out_start:.3f}:d=0.35"
         )
 
         _run(
