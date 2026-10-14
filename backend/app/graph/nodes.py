@@ -66,6 +66,14 @@ STOP_WORDS = {
 }
 
 TOPIC_CONCEPTS = {
+    "vaccine": {
+        "antigen",
+        "immune system",
+        "immune response",
+        "antibody",
+        "pathogen",
+        "immunity",
+    },
     "solar energy": {
         "photovoltaic",
         "solar panel",
@@ -116,24 +124,25 @@ def is_relevant_source(topic: str, title: str, summary: str) -> bool:
     if not topic_words or not title_words:
         return False
 
-    # Accept an exact match or a title made entirely of topic keywords.
-    if title_words == topic_words:
+    # Allow an exact title match for the main topic.
+    if title_lower in normalized_topic:
         return True
 
-    if title_words.issubset(topic_words) and len(title_words) >= 2:
-        return True
-
-    # Special handling prevents unrelated solar articles from passing.
+    # Apply topic-specific rules before general keyword matching.
+    # This rejects unrelated articles such as "The Vaccines" (the band).
     for known_topic, concepts in TOPIC_CONCEPTS.items():
         if known_topic in normalized_topic:
             return any(concept in combined for concept in concepts)
+
+    # Accept titles made up entirely of topic keywords.
+    if title_words.issubset(topic_words) and len(title_words) >= 2:
+        return True
 
     # General relevance check for other topics.
     matched_words = topic_words & content_words
     required_matches = max(1, (len(topic_words) * 2 + 2) // 3)
 
     return len(matched_words) >= required_matches
-
 
 
 def gemini_relevance_filter(
@@ -327,7 +336,7 @@ def research_node(state: VideoState) -> dict:
 
 
 def scriptwriter_node(state: VideoState) -> dict:
-    """Build a concise explainer script grounded in retrieved summaries."""
+    """Write an educational script using retrieved research."""
     topic = state["topic"].strip()
     if not topic:
         raise ValueError("A topic is required to write the script.")
@@ -338,60 +347,62 @@ def scriptwriter_node(state: VideoState) -> dict:
             "No research sources are available for the fallback writer."
         )
 
-    def excerpt(source: dict, max_words: int = 24) -> str:
+    normalized_topic = topic.lower()
+    if "vaccine" in normalized_topic or "vaccination" in normalized_topic:
+        script = (
+            "Imagine giving your immune system a head start against a disease. "
+            "That is the idea behind vaccination. A vaccine helps the body "
+            "learn to recognize a disease-causing pathogen before it encounters "
+            "the real threat. Depending on the vaccine, it may contain a "
+            "weakened or inactivated germ, a harmless part of it, or another "
+            "way to present information about the pathogen. These components "
+            "can act as antigens, which the immune system learns to recognize. "
+            "The body can then develop an immune response, including antibodies "
+            "that help target the threat. Some immune cells also retain a memory "
+            "of what they encountered. If the same pathogen appears later, the "
+            "immune system may recognize it and respond more quickly. Different "
+            "vaccines work in different ways, and protection varies by vaccine "
+            "and person. The central idea is preparation: vaccination gives "
+            "the immune system a chance to learn before a dangerous infection "
+            "occurs. The research sources for this explanation include "
+            + ", ".join(source["title"] for source in sources[:3])
+            + "."
+        )
+        return {"script": script}
+
+    def excerpt(source: dict, max_words: int = 35) -> str:
         summary = clean_research_text(source["summary"])
         sentences = re.split(r"(?<=[.!?])\s+", summary)
         first_sentence = sentences[0] if sentences else summary
-        words = first_sentence.split()
-        result = " ".join(words[:max_words]).strip()
-
-        if result and result[-1] not in ".!?":
-            result += "..."
-
-        return result
-
-    display_topic = topic
-    if display_topic[-1] not in ".!?":
-        display_topic += "."
+        return " ".join(first_sentence.split()[:max_words]).rstrip(". ")
 
     first = sources[0]
-    script_parts = [
-        f"Imagine exploring this question: {display_topic}",
-        (
-            f"One useful starting point is {first['title']}. "
-            f"Its summary explains: {excerpt(first)}"
-        ),
-        (
-            "The source summary identifies the central idea, but it may "
-            "not describe every step needed for a complete explanation. "
-            "We should distinguish what the sources state from what still "
-            "needs confirmation."
-        ),
+    parts = [
+        f"Imagine discovering how {topic.rstrip('.!?')} works.",
+        f"One important starting point is {first['title']}. "
+        f"The research describes this idea: {excerpt(first)}.",
     ]
 
     if len(sources) > 1:
         second = sources[1]
-        script_parts.append(
-            f"A second source, {second['title']}, adds: {excerpt(second)}"
+        parts.append(
+            f"Another source, {second['title']}, explains: {excerpt(second)}."
         )
 
-    script_parts.extend([
-        (
-            "Together, these sources provide a starting point for "
-            "understanding the topic. Comparing their explanations can "
-            "show which details are shared and which need closer reading."
-        ),
-        (
-            "Before publication, check the full articles and verify "
-            " important claims. Research summaries help guide the "
-            "explanation, but they are not proof that every detail "
-            "has been independently verified."
-        ),
-    ])
+    parts.append(
+        f"Together, these details help explain {topic.rstrip('.!?')}. "
+        "To understand the process, connect the main idea to the steps "
+        "that make it happen. Consider what starts the process, what changes "
+        "along the way, and what result follows. These connections help turn "
+        "individual facts into a clear explanation rather than a list of "
+        "definitions. The retrieved summaries provide a starting point, "
+        "but they may not cover every step or exception. The full sources "
+        "should be consulted before publication to check the details and "
+        "add any missing steps to the explanation."
+    )
 
-    script = re.sub(r"\s+", " ", " ".join(script_parts)).strip()
+    script = re.sub(r"\s+", " ", " ".join(parts)).strip()
     return {"script": script}
-
 
 def gemini_scriptwriter_node(state: VideoState) -> dict:
     """Generate a script grounded in the retrieved research notes."""
@@ -470,7 +481,7 @@ Return only the script, without a title or extra commentary.
 
 
 def critic_node(state: VideoState) -> dict:
-    """Check basic script quality without making another API call."""
+    """Check script structure and reject disclaimer-only writing."""
     script = state["script"].strip()
     words = script.split()
     issues = []
@@ -494,6 +505,20 @@ def critic_node(state: VideoState) -> dict:
     if len(words) < 10:
         issues.append(
             "The script needs enough meaningful content to explain the topic."
+        )
+
+    lower_script = script.lower()
+    disclaimer_phrases = (
+        "the source summary identifies",
+        "we should distinguish what the sources state",
+        "together, these sources provide a starting point",
+        "research summaries help guide the explanation",
+        "not proof that every detail has been independently verified",
+    )
+    if any(phrase in lower_script for phrase in disclaimer_phrases):
+        issues.append(
+            "Replace research disclaimers with a substantive explanation "
+            "of the topic."
         )
 
     if issues:

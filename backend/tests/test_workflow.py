@@ -34,6 +34,23 @@ def test_solar_energy_relevance_excludes_solar_corona():
 
 
 
+
+def test_vaccine_relevance_excludes_unrelated_music_band():
+    topic = "How vaccines work"
+
+    assert is_relevant_source(
+        topic,
+        "Vaccine",
+        "Vaccines stimulate the immune system to recognize antigens "
+        "and develop immunity.",
+    )
+    assert not is_relevant_source(
+        topic,
+        "The Vaccines",
+        "The Vaccines are an English indie rock band formed in London.",
+    )
+
+
 def initial_state(topic="How vaccines work"):
     return {
         "topic": topic,
