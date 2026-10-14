@@ -62,6 +62,29 @@ def main():
             print(f"   URL: {source['url']}")
             print(f"   Summary: {source['summary']}")
 
+    print("\n=== GENERATED SCENE PLAN ===")
+    scenes = result.get("scenes", [])
+
+    if not scenes:
+        print("No scenes generated. The script may not have been approved.")
+    else:
+        total_duration = 0
+
+        for scene in scenes:
+            duration = scene["duration_seconds"]
+            total_duration += duration
+
+            print(f"\nScene {scene['scene_number']}")
+            print(f"Estimated duration: {duration} seconds")
+            print(f"Narration: {scene['narration']}")
+            print(f"Visual direction: {scene['visual_description']}")
+
+        minutes, seconds = divmod(total_duration, 60)
+        print(
+            f"\nTotal estimated duration: "
+            f"{minutes} min {seconds} sec"
+        )
+
     print("\nNote: Source retrieval does not independently verify every claim.")
 
 

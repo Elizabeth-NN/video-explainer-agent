@@ -7,6 +7,13 @@ class ResearchSource(TypedDict):
     summary: str
 
 
+class Scene(TypedDict):
+    scene_number: int
+    narration: str
+    visual_description: str
+    duration_seconds: int
+
+
 class VideoState(TypedDict):
     topic: str
     research_notes: list[str]
@@ -16,3 +23,4 @@ class VideoState(TypedDict):
     critique: str
     approved: bool
     revision_count: int
+    scenes: list[Scene]

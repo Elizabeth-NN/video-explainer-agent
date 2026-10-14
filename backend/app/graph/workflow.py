@@ -1,6 +1,7 @@
 
 from langgraph.graph import END, START, StateGraph
 
+from app.graph.scene_planner import scene_planner_node
 from app.graph.nodes import (
     critic_node,
     gemini_scriptwriter_node,
@@ -34,6 +35,7 @@ def build_graph(checkpointer=None, use_llm: bool = False):
     graph.add_node("scriptwriter", writer)
 
     graph.add_node("critic", critic_node)
+    graph.add_node("scene_planner", scene_planner_node)
     graph.add_node(
         "revise_script",
         lambda state: revise_script_node(state, writer=writer),
@@ -47,7 +49,7 @@ def build_graph(checkpointer=None, use_llm: bool = False):
         "critic",
         route_after_critique,
         {
-            "approved": END,
+            "approved": "scene_planner",
             "insufficient_research": END,
             "revise": "revise_script",
             "failed": END,
@@ -55,5 +57,6 @@ def build_graph(checkpointer=None, use_llm: bool = False):
     )
 
     graph.add_edge("revise_script", "critic")
+    graph.add_edge("scene_planner", END)
 
     return graph.compile(checkpointer=checkpointer)
