@@ -7,6 +7,7 @@ from app.graph.nodes import (
     gemini_relevance_filter,
     is_relevant_source,
     research_node,
+    revise_script_node,
 )
 from app.graph.workflow import build_graph
 
@@ -95,7 +96,7 @@ def test_graph_revises_and_approves_script():
     assert result["revision_count"] == 0
     assert result["script"].startswith("Imagine")
     assert 80 <= len(result["script"].split()) <= 180
-    assert "Basic quality checks passed" in result["critique"]
+    assert "Structural and evidence-overlap checks passed" in result["critique"]
 
 
 def test_research_returns_source_titles_urls_and_summaries():
@@ -298,25 +299,93 @@ def test_critic_rejects_script_without_sources():
 
 
 def test_critic_approves_script_meeting_basic_checks():
-    state = initial_state()
+    state = initial_state(topic="How a process works")
     state["script"] = (
         "Imagine learning how a process works. "
         + "This explanation describes the main steps and ideas. " * 12
     )
     state["research_sources"] = [
         {
-            "title": "Test source",
+            "title": "Process explanation",
             "url": "https://example.com/research",
-            "summary": "A source about the topic.",
+            "summary": (
+                "This explanation describes the main steps and ideas. "
+                "Learning how a process works involves understanding "
+                "the steps and ideas."
+            ),
         }
     ]
 
     result = critic_node(state)
 
     assert result["approved"] is True
-    assert "Basic quality checks passed" in result["critique"]
-    assert "Factual accuracy has not been independently verified." in result["critique"]
+    assert "evidence-overlap checks passed" in result["critique"]
+    assert "factual accuracy has not been independently verified" in (
+        result["critique"]
+    )
 
+
+def test_critic_rejects_script_with_unsupported_sentence():
+    state = initial_state(topic="How vaccines work")
+    state["script"] = (
+        "Imagine learning how vaccines work. "
+        + "Vaccines help the immune system recognize specific pathogens. " * 9
+        + "Purple elephants operate invisible underwater computers while astronauts bake imaginary cakes on Mars."
+    )
+    state["research_sources"] = [
+        {
+            "title": "Vaccine",
+            "url": "https://example.com/vaccine",
+            "summary": (
+                "Vaccines help the immune system recognize pathogens. "
+                "The immune system can develop a response to infection."
+            ),
+        }
+    ]
+
+    result = critic_node(state)
+
+    assert result["approved"] is False
+    assert "limited word overlap" in result["critique"]
+
+
+
+def test_revision_rebuilds_script_from_research():
+    state = initial_state(topic="How vaccines work")
+    state["script"] = (
+        "Imagine learning about vaccines. "
+        + "Purple elephants operate invisible underwater computers. " * 5
+    )
+    state["research_sources"] = [
+        {
+            "title": "Vaccine",
+            "url": "https://example.com/vaccine",
+            "summary": (
+                "Vaccines help the immune system recognize pathogens. "
+                "The immune system can develop a response to infection."
+            ),
+        }
+    ]
+
+    result = revise_script_node(state)
+
+    assert result["revision_count"] == 1
+    assert result["script"].startswith("Imagine")
+    assert "Purple elephants" not in result["script"]
+    assert "immune system" in result["script"]
+
+
+def test_revision_respects_revision_limit():
+    state = initial_state()
+    state["revision_count"] = 2
+    state["script"] = "Original script"
+
+    result = revise_script_node(state)
+
+    assert result["approved"] is False
+    assert result["critique"] == "Revision limit reached."
+    assert "script" not in result
+    assert result["revision_count"] == 2
 
 
 def test_clean_research_text_repairs_solar_summary_phrases():

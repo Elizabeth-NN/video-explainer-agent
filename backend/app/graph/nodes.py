@@ -566,8 +566,9 @@ Return only the script, without a title or extra commentary.
 
 
 def critic_node(state: VideoState) -> dict:
-    """Check script structure and reject disclaimer-only writing."""
+    """Check structure, topic coverage, and textual evidence overlap."""
     script = state["script"].strip()
+    topic = state["topic"].strip()
     words = script.split()
     issues = []
 
@@ -582,7 +583,8 @@ def critic_node(state: VideoState) -> dict:
             f"{len(words)}."
         )
 
-    if not state.get("research_sources"):
+    sources = state.get("research_sources", [])
+    if not sources:
         issues.append(
             "At least one research source is required before approval."
         )
@@ -606,6 +608,89 @@ def critic_node(state: VideoState) -> dict:
             "of the topic."
         )
 
+    stopwords = {
+        "about", "after", "again", "also", "and", "are", "because",
+        "before", "being", "between", "but", "can", "could", "does",
+        "each", "for", "from", "have", "into", "its", "just", "like",
+        "more", "most", "not", "often", "only", "other", "over", "some",
+        "such", "than", "that", "the", "their", "them", "then", "there",
+        "these", "they", "this", "those", "through", "under", "using",
+        "very", "was", "were", "what", "when", "where", "which", "while",
+        "with", "would", "your", "you", "how", "why", "who", "will",
+        "its", "our", "out", "all", "any", "has", "had", "his", "her",
+        "she", "him", "his", "who", "been", "being", "it", "is", "in",
+        "on", "of", "to", "as", "at", "by", "a", "an", "i", "we",
+        "they", "he", "or", "if", "do", "did", "up", "so", "now",
+        "imagine", "explanation", "explains", "explain",
+    }
+
+    def content_terms(text: str) -> set[str]:
+        terms = set()
+        for word in re.findall(r"[a-zA-Z]{3,}", text.lower()):
+            if word in stopwords:
+                continue
+            # Normalize common plurals for simple word matching.
+            if len(word) > 4 and word.endswith("s"):
+                word = word[:-1]
+            terms.add(word)
+        return terms
+
+    topic_terms = content_terms(topic)
+    script_terms = content_terms(script)
+
+    if topic_terms and not (topic_terms & script_terms):
+        issues.append(
+            "The script does not clearly cover the requested topic."
+        )
+
+    source_text = " ".join(
+        f"{item.get('title', '')} {item.get('summary', '')}"
+        for item in sources
+    )
+    source_terms = content_terms(source_text)
+
+    sentences = [
+        sentence.strip()
+        for sentence in re.split(r"(?<=[.!?])\s+", script)
+        if sentence.strip()
+    ]
+    unsupported = []
+
+    # These are explanatory transitions or research limitations, not
+    # standalone factual claims that can be judged by word overlap.
+    non_claim_prefixes = (
+        "together, these details help explain",
+        "to understand the process,",
+        "consider what starts the process,",
+        "these connections help turn",
+        "the retrieved summaries provide a starting point",
+        "the full sources should be consulted",
+    )
+
+    if sources:
+        for sentence in sentences:
+            sentence_words = sentence.split()
+            sentence_terms = content_terms(sentence)
+
+            if sentence.lower().startswith(non_claim_prefixes):
+                continue
+
+            # Short hooks and transitions are difficult to assess reliably.
+            if len(sentence_words) < 8 or len(sentence_terms) < 3:
+                continue
+
+            overlap = sentence_terms & source_terms
+            if not overlap:
+                unsupported.append(sentence)
+
+    if unsupported:
+        examples = " ".join(unsupported[:2])
+        issues.append(
+            f"{len(unsupported)} substantive sentence(s) have limited "
+            "word overlap with the retrieved sources. Review their "
+            f"evidence before approval. Example: {examples}"
+        )
+
     if issues:
         return {
             "critique": " ".join(issues),
@@ -614,31 +699,34 @@ def critic_node(state: VideoState) -> dict:
 
     return {
         "critique": (
-            f"Basic quality checks passed: opening hook, "
-            f"{len(words)} words, and research sources present. "
-            "Factual accuracy has not been independently verified."
+            f"Structural and evidence-overlap checks passed: opening hook, "
+            f"{len(words)} words, topic coverage, and research sources "
+            "present. Text overlap is only a screening signal; factual "
+            "accuracy has not been independently verified."
         ),
         "approved": True,
     }
 
-def revise_script_node(state: VideoState) -> dict:
-    """Apply a simple deterministic revision."""
-    script = state["script"]
-    topic = state["topic"]
 
+def revise_script_node(state: VideoState) -> dict:
+    """Rebuild a rejected script from the available research."""
     if state["revision_count"] >= 2:
         return {
             "critique": "Revision limit reached.",
             "approved": False,
+            "revision_count": state["revision_count"],
         }
 
-    remainder = script.split(". ", 1)
-    revised_script = (
-        f"Imagine discovering something surprising about {topic}. "
-        + (remainder[1] if len(remainder) > 1 else "")
-    )
+    if not state.get("research_sources"):
+        return {
+            "critique": "Cannot revise without research sources.",
+            "approved": False,
+        }
+
+    # Rebuild rather than preserve sentences flagged by the critic.
+    revised = scriptwriter_node(state)
 
     return {
-        "script": revised_script,
+        "script": revised["script"],
         "revision_count": state["revision_count"] + 1,
     }
