@@ -433,6 +433,72 @@ def scriptwriter_node(state: VideoState) -> dict:
         )
 
     normalized_topic = topic.lower()
+
+    # Use the specialized solar fallback only when basic evidence exists.
+    if any(
+        term in normalized_topic
+        for term in ("solar panel", "solar panels", "photovoltaic")
+    ):
+        # Use summaries, not titles, as evidence for technical claims.
+        source_text = " ".join(
+            source.get("summary", "")
+            for source in sources
+        ).lower()
+
+        if all(
+            term in source_text
+            for term in ("sunlight", "electricity", "solar cell")
+        ):
+            parts = [
+                "Imagine turning sunlight into electricity. "
+                "Solar panels use solar cells to convert light energy "
+                "into electrical energy."
+            ]
+
+            if "semiconductor" in source_text:
+                parts.append(
+                    "These cells use semiconductor materials to help "
+                    "convert light into electrical energy."
+                )
+
+            if "photovoltaic effect" in source_text:
+                parts.append(
+                    "This light-to-electricity process is known as "
+                    "the photovoltaic effect."
+                )
+
+            if "direct current" in source_text or " dc " in f" {source_text} ":
+                parts.append(
+                    "Solar cells can produce direct current, also "
+                    "called DC electricity."
+                )
+
+            if (
+                "inverter" in source_text
+                and (
+                    "alternating current" in source_text
+                    or " ac " in f" {source_text} "
+                )
+            ):
+                parts.append(
+                    "An inverter can convert direct current into "
+                    "alternating current for compatible electrical systems."
+                )
+
+            if "temperature" in source_text:
+                parts.append(
+                    "Temperature is one factor that can affect "
+                    "solar-panel performance."
+                )
+
+            parts.append(
+                "Understanding these components helps explain how "
+                "solar technology can turn available sunlight into "
+                "useful electrical power."
+            )
+
+            return {"script": " ".join(parts)}
+
     if "vaccine" in normalized_topic or "vaccination" in normalized_topic:
         script = (
             "Imagine giving your immune system a head start against a disease. "
@@ -462,8 +528,24 @@ def scriptwriter_node(state: VideoState) -> dict:
         return " ".join(first_sentence.split()[:max_words]).rstrip(". ")
 
     first = sources[0]
+
+    # Turn question-style topics into natural phrases for the script.
+    topic_label = topic.rstrip(".!?").strip()
+    topic_label = re.sub(
+        r"^(how does|how do|how is|how are|how can|what is|what are)\s+",
+        "",
+        topic_label,
+        flags=re.IGNORECASE,
+    )
+    topic_label = re.sub(
+        r"\s+work(s)?$",
+        "",
+        topic_label,
+        flags=re.IGNORECASE,
+    ).strip()
+
     parts = [
-        f"Imagine discovering how {topic.rstrip('.!?')} works.",
+        f"Imagine exploring {topic_label} and discovering how it works.",
         f"One important starting point is {first['title']}. "
         f"The research describes this idea: {excerpt(first)}.",
     ]
@@ -475,16 +557,16 @@ def scriptwriter_node(state: VideoState) -> dict:
         )
 
     parts.append(
-        f"Together, these details help explain {topic.rstrip('.!?')}. "
-        "To understand the process, connect the main idea to the steps "
-        "that make it happen. Consider what starts the process, what changes "
-        "along the way, and what result follows. These connections help turn "
-        "individual facts into a clear explanation rather than a list of "
-        "definitions. The retrieved summaries provide a starting point, "
-        "but they may not cover every step or exception. The full sources "
-        "should be consulted before publication to check the details and "
-        "add any missing steps to the explanation."
+        f"Together, these details help explain {topic_label}. "
+        f"{first['title']} provides this key detail: {excerpt(first)}."
     )
+
+    if len(sources) > 1:
+        parts.append(
+            f"{second['title']} adds another important detail: "
+            f"{excerpt(second)}. Read together, these details show "
+            f"how the retrieved evidence relates to {topic_label}."
+        )
 
     script = re.sub(r"\s+", " ", " ".join(parts)).strip()
     return {"script": script}

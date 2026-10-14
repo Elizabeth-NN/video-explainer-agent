@@ -325,6 +325,33 @@ def test_critic_approves_script_meeting_basic_checks():
     )
 
 
+def test_critic_flags_creative_opening_hook_with_limited_overlap():
+    state = initial_state(
+        topic="How solar panels convert sunlight into electricity"
+    )
+    state["script"] = (
+        "Imagine a world where your roof acts like a giant battery, "
+        "turning pure sunshine into the power that runs your home. "
+        + "Photovoltaic cells convert sunlight directly into electricity "
+        "using semiconductor materials. " * 10
+    )
+    state["research_sources"] = [
+        {
+            "title": "Solar energy",
+            "url": "https://example.com/solar-energy",
+            "summary": (
+                "Photovoltaic cells convert sunlight into electricity "
+                "using semiconductor materials."
+            ),
+        }
+    ]
+
+    result = critic_node(state)
+
+    assert result["approved"] is False
+    assert "limited word overlap" in result["critique"]
+
+
 def test_critic_rejects_script_with_unsupported_sentence():
     state = initial_state(topic="How vaccines work")
     state["script"] = (
@@ -348,6 +375,97 @@ def test_critic_rejects_script_with_unsupported_sentence():
     assert result["approved"] is False
     assert "limited word overlap" in result["critique"]
 
+
+
+def test_solar_fallback_writer_explains_conversion_process():
+    from app.graph.nodes import scriptwriter_node
+
+    state = initial_state(
+        topic="How solar panels convert sunlight into electricity"
+    )
+    state["research_sources"] = [
+        {
+            "title": "Solar energy",
+            "url": "https://example.com/solar-energy",
+            "summary": (
+                "Sunlight provides energy. Solar cells use semiconductor "
+                "materials to convert sunlight into electricity through "
+                "the photovoltaic effect. Temperature can affect "
+                "solar-panel performance."
+            ),
+        },
+        {
+            "title": "Solar cell",
+            "url": "https://example.com/solar-cell",
+            "summary": (
+                "A solar cell converts light into electricity. "
+                "Solar cells produce direct current. An inverter can "
+                "convert direct current into alternating current."
+            ),
+        },
+    ]
+
+    result = scriptwriter_node(state)
+    script = result["script"].lower()
+
+    assert result["script"].startswith("Imagine")
+    assert "photovoltaic effect" in script
+    assert "semiconductor" in script
+    assert "inverter" in script
+    assert 80 <= len(result["script"].split()) <= 180
+    assert "retrieved summaries provide a starting point" not in script
+    assert "should be consulted before publication" not in script
+
+
+
+def test_solar_fallback_omits_unsupported_technical_claims():
+    from app.graph.nodes import scriptwriter_node
+
+    state = initial_state(
+        topic="How solar panels convert sunlight into electricity"
+    )
+    state["research_sources"] = [
+        {
+            "title": "Solar energy basics",
+            "url": "https://example.com/solar-basics",
+            "summary": (
+                "Sunlight provides energy. Solar cells convert sunlight "
+                "into electricity."
+            ),
+        }
+    ]
+
+    script = scriptwriter_node(state)["script"].lower()
+
+    assert "sunlight" in script
+    assert "solar cells" in script
+    assert "electricity" in script
+    assert "semiconductor" not in script
+    assert "photovoltaic effect" not in script
+    assert "direct current" not in script
+    assert "inverter" not in script
+    assert "alternating current" not in script
+    assert "temperature" not in script
+
+def test_generic_fallback_avoids_research_process_disclaimers():
+    from app.graph.nodes import scriptwriter_node
+
+    state = initial_state(topic="How a process works")
+    state["research_sources"] = [
+        {
+            "title": "Process",
+            "url": "https://example.com/process",
+            "summary": (
+                "A process has steps that lead to a result. "
+                "Each step contributes to the final outcome."
+            ),
+        }
+    ]
+
+    script = scriptwriter_node(state)["script"].lower()
+
+    assert "retrieved summaries provide a starting point" not in script
+    assert "should be consulted before publication" not in script
 
 
 def test_revision_rebuilds_script_from_research():
