@@ -1,13 +1,15 @@
 import argparse
 import asyncio
+from pathlib import Path
 
 from app.graph.workflow import build_graph
 from app.services.narration import DEFAULT_VOICE, generate_narration
+from app.services.video_renderer import render_video
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Generate an explainer-video script."
+        description="Generate an explainer-video script and media."
     )
     parser.add_argument(
         "topic",
@@ -26,6 +28,11 @@ def main():
         help="Generate MP3 narration for an approved script.",
     )
     parser.add_argument(
+        "--video",
+        action="store_true",
+        help="Generate narration and render an MP4 video.",
+    )
+    parser.add_argument(
         "--voice",
         default=DEFAULT_VOICE,
         help=f"Edge TTS voice (default: {DEFAULT_VOICE}).",
@@ -33,7 +40,7 @@ def main():
     parser.add_argument(
         "--output-dir",
         default="generated/narration",
-        help="Directory for generated audio and manifest files.",
+        help="Directory for generated audio, manifests, and video.",
     )
 
     args = parser.parse_args()
@@ -101,11 +108,12 @@ def main():
             f"{minutes} min {seconds} sec"
         )
 
-    if args.audio:
+    # Video generation needs narration, so --video implies --audio.
+    if args.audio or args.video:
         if not result.get("approved", False):
-            print("\nAudio skipped: the script has not been approved.")
+            print("\nMedia generation skipped: the script has not been approved.")
         elif not scenes:
-            print("\nAudio skipped: there are no scenes to narrate.")
+            print("\nMedia generation skipped: there are no scenes.")
         else:
             print("\n=== GENERATING NARRATION AUDIO ===")
             manifest = asyncio.run(
@@ -124,7 +132,32 @@ def main():
             print(
                 f"Scene audio files generated: {manifest['scene_count']}"
             )
-            print("Manifest: manifest.json")
+            print("Audio manifest: manifest.json")
+
+            if args.video:
+                print("\n=== RENDERING MP4 VIDEO ===")
+                output_path = Path(args.output_dir) / "explainer.mp4"
+
+                video = render_video(
+                    scenes=scenes,
+                    narration_manifest_path=(
+                        Path(args.output_dir) / "manifest.json"
+                    ),
+                    output_path=output_path,
+                    topic=args.topic,
+                )
+
+                print(f"Video: {video['output_file']}")
+                print(
+                    f"Resolution: {video['width']}x{video['height']} "
+                    f"at {video['fps']} FPS"
+                )
+                print(f"Video duration: {video['duration_seconds']} seconds")
+                print(f"Scenes rendered: {video['scene_count']}")
+                print(
+                    "Video metadata: "
+                    f"{output_path.with_suffix('.json')}"
+                )
 
     print("\nNote: Source retrieval does not independently verify every claim.")
 
