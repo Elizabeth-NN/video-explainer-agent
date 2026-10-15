@@ -1,14 +1,51 @@
-import React from "react";
+import React, { useMemo } from "react";
 import {
   AbsoluteFill,
   Audio,
+  Easing,
   Sequence,
   interpolate,
-  spring,
   staticFile,
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
+
+/* ──────────────────────────────────────────────────────────────
+   Types
+   ────────────────────────────────────────────────────────────── */
+
+export type ColorName = "teal" | "gold" | "red" | "purple" | "white";
+
+export type IconName =
+  | "sun" | "panel" | "cell" | "bolt" | "inverter" | "house"
+  | "syringe" | "virus" | "immune" | "shield" | "antibody"
+  | "rna" | "protein" | "gear" | "link" | "check" | "dot";
+
+export type NodeSpec = { label: string; icon: IconName; color?: ColorName };
+
+/**
+ * What the scene generator should emit per scene (optional `visual`).
+ * - flow: 2-4 nodes connected left to right, particles flow along the links
+ * - hub:  one centre node with 2-6 satellites (inputs or outputs)
+ * - bars: a small animated bar chart with count-up numbers
+ */
+export type VisualSpec =
+  | { type: "flow"; title?: string; nodes: NodeSpec[]; footnote?: string }
+  | {
+      type: "hub";
+      title?: string;
+      center: NodeSpec;
+      satellites: NodeSpec[];
+      direction?: "in" | "out";
+      footnote?: string;
+    }
+  | {
+      type: "bars";
+      title?: string;
+      bars: { label: string; value: number; color?: ColorName }[];
+      suffix?: string;
+      footnote?: string;
+    };
 
 export type ExplainerScene = {
   sceneNumber: number;
@@ -17,6 +54,7 @@ export type ExplainerScene = {
   audioFile: string;
   durationInFrames: number;
   from: number;
+  visual?: VisualSpec;
 };
 
 export type ExplainerProps = {
@@ -26,6 +64,10 @@ export type ExplainerProps = {
   height: number;
   scenes: ExplainerScene[];
 };
+
+/* ──────────────────────────────────────────────────────────────
+   Palette + animation helpers
+   ────────────────────────────────────────────────────────────── */
 
 const C = {
   bg: "#0B1220",
@@ -38,294 +80,697 @@ const C = {
   purple: "#A78BFA",
 };
 
-const Visual: React.FC<{ scene: ExplainerScene }> = ({ scene }) => {
+const COLOR: Record<ColorName, string> = {
+  teal: C.teal,
+  gold: C.gold,
+  red: C.red,
+  purple: C.purple,
+  white: C.white,
+};
+
+/** Frames of crossfade between scenes. */
+const OVERLAP = 10;
+
+const CLAMP = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
+const ease = Easing.bezier(0.22, 1, 0.36, 1);
+
+/** 0 → 1 between `start` and `start + dur` frames, eased, clamped. */
+const stage = (frame: number, start: number, dur = 20): number =>
+  interpolate(frame, [start, start + Math.max(1, dur)], [0, 1], {
+    ...CLAMP,
+    easing: ease,
+  });
+
+/** fps-independent oscillation. hz = cycles per second. */
+const osc = (t: number, hz: number, amp: number, phase = 0): number =>
+  Math.sin(2 * Math.PI * hz * t + phase) * amp;
+
+/** frame, fps, time in seconds, and a seconds→frames converter. */
+const useT = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const entrance = spring({ frame, fps, config: { damping: 16 } });
-  const float = Math.sin(frame / 13) * 12;
-  const pulse = 1 + Math.sin(frame / 9) * 0.07;
-  const reveal = (delay: number) =>
-    spring({ frame: frame - delay, fps, config: { damping: 15 } });
+  return { frame, fps, t: frame / fps, s: (sec: number) => sec * fps };
+};
 
-  const text = scene.narration.toLowerCase();
-  const n = scene.sceneNumber;
+type Pt = [number, number];
 
-  // 1. Introduce the idea: a threat and a protective immune cell.
-  if (n === 1) {
-    return (
-      <svg viewBox="0 0 1000 430" width="100%" height="100%">
-        <defs>
-          <radialGradient id="introGlow">
-            <stop offset="0%" stopColor={C.teal} stopOpacity=".32" />
-            <stop offset="100%" stopColor={C.teal} stopOpacity="0" />
-          </radialGradient>
-        </defs>
-        <circle cx="500" cy="210" r="190" fill="url(#introGlow)" />
-        <g transform={`translate(310 ${210 + float}) scale(${pulse})`}>
-          <circle r="105" fill="#123442" stroke={C.teal} strokeWidth="4" />
-          <circle r="68" fill={C.teal} fillOpacity=".12" stroke={C.teal} strokeOpacity=".6" strokeWidth="2" />
-          {Array.from({ length: 9 }, (_, i) => (
-            <circle
-              key={i}
-              cx={Math.cos(i * Math.PI * 2 / 9) * 75}
-              cy={Math.sin(i * Math.PI * 2 / 9) * 75}
-              r="7"
-              fill={C.teal}
-            />
-          ))}
-        </g>
-        <g transform={`translate(${690 - entrance * 80} ${205 - float}) rotate(${frame * 0.5})`}>
-          {Array.from({ length: 12 }, (_, i) => (
-            <path
-              key={i}
-              d="M0 -40 L0 -64"
-              transform={`rotate(${i * 30})`}
-              stroke={C.red}
-              strokeWidth="8"
-              strokeLinecap="round"
-            />
-          ))}
-          <circle r="43" fill="#743B50" stroke={C.red} strokeWidth="3" />
-          <circle cx="-12" cy="-9" r="8" fill="#F7B7B7" />
-          <circle cx="15" cy="13" r="7" fill="#F7B7B7" />
-          <circle cx="14" cy="-17" r="5" fill="#F7B7B7" />
-        </g>
-        <path d="M430 210 C470 160 520 260 570 210" fill="none" stroke={C.gold} strokeWidth="4" strokeDasharray="8 12" />
-        <circle cx={450 + ((frame * 2) % 100)} cy={210 + Math.sin(frame / 7) * 22} r="8" fill={C.gold} />
-        <text x="310" y="365" textAnchor="middle" fill={C.teal} fontSize="21" letterSpacing="3">IMMUNE DEFENSE</text>
-        <text x="690" y="365" textAnchor="middle" fill={C.red} fontSize="21" letterSpacing="3">POTENTIAL THREAT</text>
-      </svg>
-    );
-  }
+const bezier = (a: Pt, c1: Pt, c2: Pt, b: Pt, p: number): Pt => {
+  const u = 1 - p;
+  return [
+    u * u * u * a[0] + 3 * u * u * p * c1[0] + 3 * u * p * p * c2[0] + p * p * p * b[0],
+    u * u * u * a[1] + 3 * u * u * p * c1[1] + 3 * u * p * p * c2[1] + p * p * p * b[1],
+  ];
+};
 
-  // 2. Vaccine delivery: a syringe introduces vaccine material.
-  if (n === 2) {
-    return (
-      <svg viewBox="0 0 1000 430" width="100%" height="100%">
-        <circle cx="500" cy="230" r="160" fill="#123442" fillOpacity=".45" />
-        <g transform={`translate(${390 + float} 205) rotate(-28)`}>
-          <rect x="-30" y="-130" width="60" height="180" rx="12" fill="#DDE7F1" fillOpacity=".15" stroke={C.teal} strokeWidth="4" />
-          <rect x="-23" y="-40" width="46" height="80" rx="5" fill={C.teal} fillOpacity=".55" />
-          <path d="M0 50 V125" stroke={C.white} strokeWidth="5" />
-          <path d="M-14 -145 H14 M0 -145 V-130 M-42 -115 H42" stroke={C.white} strokeWidth="5" strokeLinecap="round" />
-        </g>
-        <path d="M460 180 C530 130 570 280 640 220" fill="none" stroke={C.teal} strokeWidth="4" strokeDasharray="8 12" />
-        {Array.from({ length: 7 }, (_, i) => {
-          const t = ((frame / 90 + i / 7) % 1);
-          return <circle key={i} cx={465 + t * 180} cy={190 + Math.sin(t * Math.PI * 2 + i) * 30} r={5 + (i % 3)} fill={i % 2 ? C.gold : C.teal} opacity=".9" />;
-        })}
-        <g transform={`translate(730 ${235 + float})`}>
-          <circle r="83" fill="#123442" stroke={C.teal} strokeWidth="4" />
-          <circle r="48" fill={C.teal} fillOpacity=".14" />
-          {Array.from({ length: 8 }, (_, i) => (
-            <circle key={i} cx={Math.cos(i * Math.PI / 4) * 56} cy={Math.sin(i * Math.PI / 4) * 56} r="8" fill={C.gold} />
-          ))}
-        </g>
-        <text x="390" y="365" fill={C.white} fontSize="20" textAnchor="middle">VACCINE</text>
-        <text x="730" y="365" fill={C.teal} fontSize="20" textAnchor="middle">BODY'S CELLS</text>
-      </svg>
-    );
-  }
+/* ──────────────────────────────────────────────────────────────
+   Icons (drawn in a ±40 box, centred on 0,0)
+   ────────────────────────────────────────────────────────────── */
 
-  // 3. Show the range of vaccine antigens and pathogen-like structures.
-  if (n === 3) {
-    return (
-      <svg viewBox="0 0 1000 430" width="100%" height="100%">
-        <g transform={`translate(330 ${205 + float}) rotate(${frame * .3})`}>
-          {Array.from({ length: 16 }, (_, i) => (
-            <g key={i} transform={`rotate(${i * 22.5})`}>
-              <path d="M0 -65 V-94" stroke={C.red} strokeWidth="8" strokeLinecap="round" />
-              <circle cx="0" cy="-98" r="9" fill={C.gold} />
-            </g>
-          ))}
-          <circle r="65" fill="#743B50" stroke={C.red} strokeWidth="4" />
-          {Array.from({ length: 8 }, (_, i) => (
-            <circle key={i} cx={Math.cos(i * Math.PI / 4) * 33} cy={Math.sin(i * Math.PI / 4) * 33} r="7" fill="#F7B7B7" />
-          ))}
-        </g>
-        <path d="M445 205 H560" stroke={C.muted} strokeWidth="3" strokeDasharray="7 9" />
-        <g transform={`translate(700 ${205 - float})`}>
-          <circle r="83" fill="#15313A" stroke={C.teal} strokeWidth="3" />
-          <circle r="61" fill={C.teal} fillOpacity=".12" />
-          {Array.from({ length: 5 }, (_, i) => (
-            <g key={i} transform={`rotate(${i * 72})`}>
-              <rect x="-10" y="-89" width="20" height="32" rx="8" fill={C.gold} />
-            </g>
-          ))}
-          <circle r="22" fill={C.teal} fillOpacity=".6" />
-        </g>
-        <text x="330" y="350" fill={C.red} fontSize="20" textAnchor="middle">MICROBE-LIKE SHAPE</text>
-        <text x="700" y="350" fill={C.teal} fontSize="20" textAnchor="middle">SURFACE PROTEIN</text>
-        <text x="500" y="395" fill={C.muted} fontSize="16" textAnchor="middle">Different vaccines can present different antigens</text>
-      </svg>
-    );
-  }
+type IconProps = { c: string; t: number };
 
-  // 4. Recognition: an antigen meets a matching receptor.
-  if (n === 4) {
-    return (
-      <svg viewBox="0 0 1000 430" width="100%" height="100%">
-        <g transform={`translate(275 ${215 + float})`}>
-          <circle r="110" fill="#123442" stroke={C.teal} strokeWidth="4" />
-          <circle r="75" fill={C.teal} fillOpacity=".1" stroke={C.teal} strokeOpacity=".5" strokeWidth="2" />
-          <path d="M-8 -100 L-8 -65 L-25 -48 M-8 -65 L10 -48" stroke={C.gold} strokeWidth="10" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-          <path d="M40 -94 L40 -62 L22 -44 M40 -62 L58 -44" stroke={C.teal} strokeWidth="8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-          <circle cx="-25" cy="5" r="12" fill={C.teal} />
-          <circle cx="28" cy="24" r="9" fill={C.gold} />
-        </g>
-        <path d={`M390 215 C470 ${130 + float} 530 ${300 - float} 610 215`} fill="none" stroke={C.gold} strokeWidth="4" strokeDasharray="7 10" />
-        <circle cx={405 + ((frame * 2) % 180)} cy={215 + Math.sin(frame / 8) * 20} r="10" fill={C.gold} />
-        <g transform={`translate(720 ${215 - float}) scale(${pulse})`}>
-          <circle r="72" fill="#743B50" stroke={C.red} strokeWidth="4" />
-          {Array.from({ length: 10 }, (_, i) => (
-            <path key={i} d="M0 -72 V-96" transform={`rotate(${i * 36})`} stroke={C.red} strokeWidth="7" strokeLinecap="round" />
-          ))}
-          <circle r="29" fill={C.red} fillOpacity=".3" />
-        </g>
-        <text x="275" y="365" fill={C.teal} fontSize="20" textAnchor="middle">IMMUNE RECEPTOR</text>
-        <text x="720" y="365" fill={C.red} fontSize="20" textAnchor="middle">ANTIGEN SIGNAL</text>
-      </svg>
-    );
-  }
+const spokes = (n: number) => Array.from({ length: n }, (_, i) => (i * 360) / n);
 
-  // 5. Future protection: memory cells remain while a threat is recognized.
-  if (n === 5) {
-    return (
-      <svg viewBox="0 0 1000 430" width="100%" height="100%">
-        <g transform={`translate(280 ${210 + float})`}>
-          <circle r="86" fill="#123442" stroke={C.teal} strokeWidth="4" />
-          <circle r="51" fill={C.teal} fillOpacity=".2" />
-          <circle cx="-15" cy="-8" r="12" fill={C.teal} />
-          <circle cx="18" cy="15" r="10" fill={C.gold} />
-          <circle cx="19" cy="-23" r="7" fill={C.teal} />
-        </g>
-        <g transform={`translate(500 ${210 - float})`}>
-          <circle r="86" fill="#123442" stroke={C.teal} strokeWidth="4" />
-          <circle r="51" fill={C.teal} fillOpacity=".2" />
-          <circle cx="-15" cy="-8" r="12" fill={C.teal} />
-          <circle cx="18" cy="15" r="10" fill={C.gold} />
-          <circle cx="19" cy="-23" r="7" fill={C.teal} />
-        </g>
-        <path d="M385 210 H395 M605 210 H655" stroke={C.gold} strokeWidth="4" strokeDasharray="7 9" />
-        <g transform={`translate(760 ${210 + Math.sin(frame / 10) * 10}) rotate(${frame * .5})`}>
-          {Array.from({ length: 10 }, (_, i) => <path key={i} d="M0 -38 V-57" transform={`rotate(${i * 36})`} stroke={C.red} strokeWidth="6" strokeLinecap="round" />)}
-          <circle r="38" fill="#743B50" stroke={C.red} strokeWidth="3" />
-        </g>
-        <path d="M650 130 L685 145 L675 180" fill="none" stroke={C.gold} strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
-        <text x="390" y="355" fill={C.teal} fontSize="20" textAnchor="middle">IMMUNE MEMORY</text>
-        <text x="760" y="355" fill={C.red} fontSize="20" textAnchor="middle">FUTURE EXPOSURE</text>
-      </svg>
-    );
-  }
-
-  // 6. mRNA: a strand provides instructions that a cell uses to make protein.
-  if (n === 6 || text.includes("mrna") || text.includes("messenger rna")) {
-    return (
-      <svg viewBox="0 0 1000 430" width="100%" height="100%">
-        <g transform={`translate(265 ${210 + float})`}>
-          <circle r="105" fill="#123442" stroke={C.teal} strokeWidth="4" />
-          <circle r="62" fill={C.teal} fillOpacity=".1" stroke={C.teal} strokeOpacity=".5" strokeWidth="2" />
-          <path d={Array.from({ length: 11 }, (_, i) => `${i === 0 ? "M" : "L"}${-38 + i * 8} ${-38 + Math.sin(i * 1.3) * 25}`).join(" ")} fill="none" stroke={C.gold} strokeWidth="7" strokeLinecap="round" />
-          <path d={Array.from({ length: 11 }, (_, i) => `${i === 0 ? "M" : "L"}${-38 + i * 8} ${8 + Math.sin(i * 1.3 + 1) * 25}`).join(" ")} fill="none" stroke={C.teal} strokeWidth="7" strokeLinecap="round" />
-        </g>
-        <path d="M385 210 C455 145 515 275 590 210" fill="none" stroke={C.gold} strokeWidth="4" strokeDasharray="8 10" />
-        <circle cx={405 + ((frame * 2) % 170)} cy={210 + Math.sin(frame / 8) * 18} r="8" fill={C.gold} />
-        <g transform={`translate(735 ${210 - float})`}>
-          {Array.from({ length: 9 }, (_, i) => (
-            <circle key={i} cx={Math.cos(i * Math.PI * 2 / 9) * 45} cy={Math.sin(i * Math.PI * 2 / 9) * 45} r={10 + (i % 3) * 3} fill={i % 2 ? C.teal : C.gold} opacity={reveal(i * 3)} />
-          ))}
-          <circle r="23" fill={C.purple} fillOpacity=".75" />
-        </g>
-        <text x="265" y="355" fill={C.gold} fontSize="20" textAnchor="middle">mRNA INSTRUCTIONS</text>
-        <text x="735" y="355" fill={C.teal} fontSize="20" textAnchor="middle">PROTEIN PRODUCT</text>
-      </svg>
-    );
-  }
-
-  // 7. Conjugate vaccine: two components are joined.
-  if (n === 7 || text.includes("conjugate") || text.includes("carrier antigen")) {
-    return (
-      <svg viewBox="0 0 1000 430" width="100%" height="100%">
-        <g transform={`translate(285 ${205 + float}) scale(${pulse})`}>
-          <circle r="58" fill="#743B50" stroke={C.red} strokeWidth="4" />
-          {Array.from({ length: 8 }, (_, i) => <circle key={i} cx={Math.cos(i * Math.PI / 4) * 32} cy={Math.sin(i * Math.PI / 4) * 32} r="7" fill="#F7B7B7" />)}
-        </g>
-        <path d="M365 205 H425" stroke={C.gold} strokeWidth="5" strokeDasharray="7 8" />
-        <circle cx="455" cy="205" r="25" fill={C.gold} />
-        <path d="M485 205 H545" stroke={C.gold} strokeWidth="5" strokeDasharray="7 8" />
-        <g transform={`translate(670 ${205 - float}) scale(${pulse})`}>
-          <circle r="91" fill="#123442" stroke={C.teal} strokeWidth="4" />
-          {Array.from({ length: 12 }, (_, i) => <circle key={i} cx={Math.cos(i * Math.PI / 6) * 57} cy={Math.sin(i * Math.PI / 6) * 57} r="8" fill={C.teal} />)}
-          <circle r="36" fill={C.teal} fillOpacity=".2" />
-          <circle cx="-12" cy="-10" r="10" fill={C.gold} />
-          <circle cx="17" cy="12" r="9" fill={C.gold} />
-        </g>
-        <text x="285" y="350" fill={C.red} fontSize="20" textAnchor="middle">WEAKER ANTIGEN</text>
-        <text x="455" y="350" fill={C.gold} fontSize="18" textAnchor="middle">JOINED</text>
-        <text x="670" y="350" fill={C.teal} fontSize="20" textAnchor="middle">CARRIER ANTIGEN</text>
-      </svg>
-    );
-  }
-
-  // 8. Summary: protective response surrounding a recognized pathogen.
-  return (
-    <svg viewBox="0 0 1000 430" width="100%" height="100%">
-      <circle cx="500" cy="210" r={130 * pulse} fill={C.teal} fillOpacity=".06" stroke={C.teal} strokeOpacity=".4" strokeWidth="3" />
-      <circle cx="500" cy="210" r="90" fill="none" stroke={C.gold} strokeWidth="3" strokeDasharray="9 12" transform={`rotate(${frame * 0.6} 500 210)`} />
-      <g transform={`translate(500 ${210 + float}) rotate(${frame * .4})`}>
-        {Array.from({ length: 12 }, (_, i) => <path key={i} d="M0 -42 V-60" transform={`rotate(${i * 30})`} stroke={C.red} strokeWidth="7" strokeLinecap="round" />)}
-        <circle r="42" fill="#743B50" stroke={C.red} strokeWidth="3" />
-        <circle cx="-13" cy="-9" r="7" fill="#F7B7B7" />
-        <circle cx="14" cy="12" r="7" fill="#F7B7B7" />
+const ICONS: Record<IconName, React.FC<IconProps>> = {
+  sun: ({ c, t }) => (
+    <g>
+      <circle r="17" fill={c} />
+      <g transform={`rotate(${t * 20})`}>
+        {spokes(12).map((a) => (
+          <path key={a} d="M0 -26 V-38" transform={`rotate(${a})`}
+            stroke={c} strokeWidth="5" strokeLinecap="round" />
+        ))}
       </g>
-      {Array.from({ length: 6 }, (_, i) => {
-        const angle = i * Math.PI / 3 + frame / 70;
-        const x = 500 + Math.cos(angle) * 155;
-        const y = 210 + Math.sin(angle) * 125;
-        return (
-          <g key={i} transform={`translate(${x} ${y}) rotate(${angle * 180 / Math.PI + 90})`}>
-            <path d="M0 20 V0 M0 0 L-13 -15 M0 0 L13 -15" stroke={C.teal} strokeWidth="7" fill="none" strokeLinecap="round" />
-          </g>
-        );
-      })}
-      <text x="500" y="390" fill={C.teal} fontSize="21" textAnchor="middle" letterSpacing="3">RECOGNITION · RESPONSE · MEMORY</text>
-    </svg>
+    </g>
+  ),
+
+  panel: ({ c }) => (
+    <g transform="skewX(-8)">
+      <rect x="-34" y="-24" width="68" height="48" rx="4"
+        fill={c} fillOpacity=".18" stroke={c} strokeWidth="3" />
+      <path d="M-11 -24 V24 M11 -24 V24 M-34 0 H34" stroke={c} strokeWidth="2" />
+    </g>
+  ),
+
+  cell: ({ c, t }) => (
+    <g>
+      <rect x="-32" y="-26" width="64" height="52" rx="6"
+        fill={c} fillOpacity=".15" stroke={c} strokeWidth="3" />
+      {[0, 1, 2].map((i) => (
+        <circle key={i} cx={-22 + ((t * 45 + i * 15) % 44)} cy={-14 + i * 14}
+          r="4.5" fill={c} />
+      ))}
+    </g>
+  ),
+
+  bolt: ({ c }) => <path d="M6 -36 L-17 4 H-2 L-8 36 L18 -8 H4 Z" fill={c} />,
+
+  inverter: ({ c }) => (
+    <g>
+      <rect x="-24" y="-32" width="48" height="64" rx="9"
+        fill={c} fillOpacity=".15" stroke={c} strokeWidth="3" />
+      <path d="M-12 -14 H12 M-12 -2 H12" stroke={c} strokeWidth="4" strokeLinecap="round" />
+      <circle cy="17" r="5" fill={c} />
+    </g>
+  ),
+
+  house: ({ c }) => (
+    <g>
+      <path d="M-36 0 L0 -32 L36 0" fill="none" stroke={c} strokeWidth="5"
+        strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M-27 -5 V30 H27 V-5" fill={c} fillOpacity=".15" stroke={c} strokeWidth="3" />
+      <rect x="-7" y="10" width="14" height="20" fill={c} fillOpacity=".5" />
+    </g>
+  ),
+
+  syringe: ({ c }) => (
+    <g transform="rotate(-35)">
+      <rect x="-9" y="-30" width="18" height="46" rx="4"
+        fill={c} fillOpacity=".2" stroke={c} strokeWidth="3" />
+      <rect x="-6" y="-6" width="12" height="20" fill={c} fillOpacity=".7" />
+      <path d="M0 16 V38 M0 -30 V-42 M-12 -42 H12" stroke={c} strokeWidth="3.5"
+        strokeLinecap="round" />
+    </g>
+  ),
+
+  virus: ({ c, t }) => (
+    <g>
+      {spokes(12).map((a) => (
+        <path key={a} d="M0 -20 V-33" transform={`rotate(${a + t * 15})`}
+          stroke={c} strokeWidth="5" strokeLinecap="round" />
+      ))}
+      <circle r="20" fill={c} fillOpacity=".35" stroke={c} strokeWidth="3" />
+      <circle cx="-6" cy="-4" r="4" fill={C.white} fillOpacity=".8" />
+      <circle cx="7" cy="6" r="3.5" fill={C.white} fillOpacity=".8" />
+    </g>
+  ),
+
+  immune: ({ c, t }) => (
+    <g>
+      <circle r="31" fill={c} fillOpacity=".12" stroke={c} strokeWidth="3" />
+      <circle r="14" fill={c} fillOpacity=".35" />
+      {spokes(8).map((a) => (
+        <circle key={a} r="4.5" fill={c}
+          cx={Math.cos(((a + t * 25) * Math.PI) / 180) * 22}
+          cy={Math.sin(((a + t * 25) * Math.PI) / 180) * 22} />
+      ))}
+    </g>
+  ),
+
+  shield: ({ c }) => (
+    <g>
+      <path d="M0 -36 L28 -25 V3 C28 21 14 31 0 38 C-14 31 -28 21 -28 3 V-25 Z"
+        fill={c} fillOpacity=".15" stroke={c} strokeWidth="3.5" strokeLinejoin="round" />
+      <path d="M-11 2 L-3 11 L12 -9" fill="none" stroke={c} strokeWidth="5"
+        strokeLinecap="round" strokeLinejoin="round" />
+    </g>
+  ),
+
+  antibody: ({ c }) => (
+    <path d="M0 34 V2 M0 2 L-20 -28 M0 2 L20 -28" fill="none" stroke={c}
+      strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" />
+  ),
+
+  rna: ({ c, t }) => {
+    const strand = (phase: number) =>
+      Array.from({ length: 13 }, (_, i) =>
+        `${i ? "L" : "M"}${-36 + i * 6} ${Math.sin(i * 0.9 + phase + t * 3) * 14}`,
+      ).join(" ");
+    return (
+      <g>
+        <path d={strand(0)} fill="none" stroke={c} strokeWidth="6" strokeLinecap="round" />
+        <path d={strand(Math.PI)} fill="none" stroke={c} strokeOpacity=".55"
+          strokeWidth="6" strokeLinecap="round" />
+      </g>
+    );
+  },
+
+  protein: ({ c, t }) => {
+    const blobs: [number, number, number][] = [
+      [0, 0, 12], [-18, -10, 9], [16, -14, 8], [20, 10, 10],
+      [-14, 16, 9], [0, -27, 6], [-27, 8, 6],
+    ];
+    return (
+      <g>
+        {blobs.map(([x, y, r], i) => (
+          <circle key={i} cx={x} cy={y} r={r * (1 + osc(t, 0.5, 0.08, i))}
+            fill={i % 2 ? C.gold : c} fillOpacity=".85" />
+        ))}
+      </g>
+    );
+  },
+
+  gear: ({ c, t }) => (
+    <g transform={`rotate(${t * 30})`}>
+      {spokes(8).map((a) => (
+        <rect key={a} x="-5" y="-33" width="10" height="13" rx="2" fill={c}
+          transform={`rotate(${a})`} />
+      ))}
+      <circle r="22" fill="none" stroke={c} strokeWidth="6" />
+      <circle r="6" fill={c} />
+    </g>
+  ),
+
+  link: ({ c }) => (
+    <g fill="none" stroke={c} strokeWidth="6">
+      <circle cx="-13" r="17" />
+      <circle cx="13" r="17" strokeOpacity=".65" />
+    </g>
+  ),
+
+  check: ({ c }) => (
+    <path d="M-24 0 L-8 18 L26 -20" fill="none" stroke={c} strokeWidth="9"
+      strokeLinecap="round" strokeLinejoin="round" />
+  ),
+
+  dot: ({ c, t }) => (
+    <g>
+      <circle cx="-12" cy={-8 + osc(t, 0.6, 3)} r="10" fill={c} />
+      <circle cx="13" cy={10 + osc(t, 0.6, 3, 2)} r="10" fill={c} />
+      <circle cx="13" cy={-16 + osc(t, 0.6, 3, 4)} r="6" fill={c} />
+    </g>
+  ),
+};
+
+/* ──────────────────────────────────────────────────────────────
+   Primitives: Node, Link, Footnote
+   ────────────────────────────────────────────────────────────── */
+
+const Node: React.FC<{
+  x: number;
+  y: number;
+  r: number;
+  spec: NodeSpec;
+  delay: number;
+  index: number;
+  labelPos?: "below" | "above";
+}> = ({ x, y, r, spec, delay, index, labelPos = "below" }) => {
+  const { frame, t, s } = useT();
+  const col = COLOR[spec.color ?? "teal"];
+  const Icon = ICONS[spec.icon];
+
+  const pop = stage(frame, delay, s(0.55));
+  const ring = stage(frame, delay, s(0.9));
+  const label = stage(frame, delay + s(0.3), s(0.4));
+  const bob = osc(t, 0.35, 5, index * 1.7);
+  const glow = 1 + osc(t, 0.6, 0.05, index);
+
+  return (
+    <g transform={`translate(${x} ${y + bob})`} opacity={pop}>
+      <g transform={`scale(${0.6 + 0.4 * pop})`}>
+        <circle r={r * glow} fill={col} fillOpacity=".08" />
+        <circle r={r} fill={col} fillOpacity=".1" />
+        <circle r={r} fill="none" stroke={col} strokeWidth="4"
+          strokeLinecap="round" pathLength={1} strokeDasharray="1 1"
+          strokeDashoffset={1 - ring} transform="rotate(-90)"
+          opacity={ring > 0 ? 1 : 0} />
+        <g transform={`scale(${r / 56})`}>
+          <Icon c={col} t={t} />
+        </g>
+      </g>
+      <text x="0" y={labelPos === "below" ? r + 32 : -(r + 16)}
+        textAnchor="middle" fill={col} fontSize="20" letterSpacing="2"
+        opacity={label}
+        transform={`translate(0 ${(1 - label) * 8})`}>
+        {spec.label}
+      </text>
+    </g>
   );
 };
 
-const Scene: React.FC<{ scene: ExplainerScene; topic: string }> = ({ scene, topic }) => {
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  const entrance = spring({ frame, fps, config: { damping: 18, stiffness: 90 } });
-  const fade = interpolate(
-    frame,
-    [0, 8, scene.durationInFrames - 8, scene.durationInFrames],
-    [0, 1, 1, 0],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
-  );
-
-  const titles = [
-    "Meet the immune system",
-    "Introducing a vaccine",
-    "Recognizing an antigen",
-    "The immune response begins",
-    "Preparing for the future",
-    "From mRNA to protein",
-    "Combining antigens",
-    "Building immune memory",
-  ];
-  const title = titles[scene.sceneNumber - 1] || `The key idea — ${scene.sceneNumber}`;
+const Link: React.FC<{
+  a: Pt;
+  c1: Pt;
+  c2: Pt;
+  b: Pt;
+  color: string;
+  start: number;
+  dur: number;
+  particles?: number;
+}> = ({ a, c1, c2, b, color, start, dur, particles = 4 }) => {
+  const { frame, t, s } = useT();
+  const draw = stage(frame, start, dur);
+  const live = stage(frame, start + dur, s(0.4));
+  const head = stage(frame, start + dur - 4, s(0.2));
+  const angle = (Math.atan2(b[1] - c2[1], b[0] - c2[0]) * 180) / Math.PI;
+  const d = `M${a[0]} ${a[1]} C${c1[0]} ${c1[1]} ${c2[0]} ${c2[1]} ${b[0]} ${b[1]}`;
 
   return (
-    <AbsoluteFill
-      style={{
-        background: `radial-gradient(ellipse at 50% 45%, #172943 0%, ${C.bg} 72%)`,
-        color: C.white,
-        fontFamily: "Arial, Helvetica, sans-serif",
-        opacity: fade,
-        overflow: "hidden",
-      }}
-    >
+    <g>
+      <path d={d} fill="none" stroke={color} strokeWidth="4" strokeLinecap="round"
+        strokeOpacity=".8" pathLength={1} strokeDasharray="1 1"
+        strokeDashoffset={1 - draw} opacity={draw > 0 ? 1 : 0} />
+      <g transform={`translate(${b[0]} ${b[1]}) rotate(${angle})`} opacity={head}>
+        <path d="M-14 -11 L0 0 L-14 11" fill="none" stroke={color} strokeWidth="4"
+          strokeLinecap="round" strokeLinejoin="round" />
+      </g>
+      {live > 0 &&
+        Array.from({ length: particles }, (_, i) => {
+          const p = (t * 0.4 + i / particles) % 1;
+          const [px, py] = bezier(a, c1, c2, b, p);
+          return (
+            <circle key={i} cx={px} cy={py} r="6" fill={color}
+              opacity={Math.sin(p * Math.PI) * live} />
+          );
+        })}
+    </g>
+  );
+};
+
+const Footnote: React.FC<{ text?: string; at: number }> = ({ text, at }) => {
+  const { frame, s } = useT();
+  if (!text) return null;
+  const p = stage(frame, at, s(0.5));
+  return (
+    <text x="500" y="414" textAnchor="middle" fill={C.muted} fontSize="17"
+      opacity={p} transform={`translate(0 ${(1 - p) * 6})`}>
+      {text}
+    </text>
+  );
+};
+
+/* ──────────────────────────────────────────────────────────────
+   Diagrams
+   ────────────────────────────────────────────────────────────── */
+
+type Spec<T extends VisualSpec["type"]> = Extract<VisualSpec, { type: T }>;
+
+const FlowDiagram: React.FC<{ spec: Spec<"flow"> }> = ({ spec }) => {
+  const { s } = useT();
+  const n = spec.nodes.length;
+  const margin = n <= 2 ? 260 : n === 3 ? 190 : 150;
+  const r = n >= 4 ? 56 : 70;
+  const y = 190;
+  const step = s(0.7);
+  const xs = spec.nodes.map((_, i) =>
+    n === 1 ? 500 : margin + (i * (1000 - 2 * margin)) / (n - 1),
+  );
+
+  return (
+    <>
+      {spec.nodes.map((node, i) => (
+        <Node key={i} x={xs[i]} y={y} r={r} spec={node} index={i}
+          delay={s(0.2) + i * step} />
+      ))}
+      {xs.slice(0, -1).map((x, i) => {
+        const a: Pt = [x + r + 12, y];
+        const b: Pt = [xs[i + 1] - r - 12, y];
+        const dx = b[0] - a[0];
+        return (
+          <Link key={i} a={a} b={b}
+            c1={[a[0] + dx / 3, y - 30]} c2={[b[0] - dx / 3, y - 30]}
+            color={COLOR[spec.nodes[i + 1].color ?? "teal"]}
+            start={s(0.2) + i * step + s(0.5)} dur={s(0.7)} />
+        );
+      })}
+      <Footnote text={spec.footnote} at={s(0.2) + n * step + s(0.4)} />
+    </>
+  );
+};
+
+const HubDiagram: React.FC<{ spec: Spec<"hub"> }> = ({ spec }) => {
+  const { s } = useT();
+  const cx = 500, cy = 195, rx = 330, ry = 118, R = 74, r = 46;
+  const n = spec.satellites.length;
+  const out = spec.direction === "out";
+
+  return (
+    <>
+      <Node x={cx} y={cy} r={R} spec={spec.center} index={0}
+        delay={s(0.2)} labelPos="above" />
+      {spec.satellites.map((sp, i) => {
+        const ang = -Math.PI / 2 + Math.PI / n + (i * 2 * Math.PI) / n;
+        const x = cx + Math.cos(ang) * rx;
+        const y = cy + Math.sin(ang) * ry;
+        const delay = s(0.9) + i * s(0.25);
+
+        const vx = x - cx, vy = y - cy;
+        const len = Math.hypot(vx, vy);
+        const ux = vx / len, uy = vy / len;
+        const centerEdge: Pt = [cx + ux * (R + 14), cy + uy * (R + 14)];
+        const satEdge: Pt = [x - ux * (r + 14), y - uy * (r + 14)];
+        const a = out ? centerEdge : satEdge;
+        const b = out ? satEdge : centerEdge;
+        const c1: Pt = [a[0] + (b[0] - a[0]) / 3, a[1] + (b[1] - a[1]) / 3];
+        const c2: Pt = [a[0] + ((b[0] - a[0]) * 2) / 3, a[1] + ((b[1] - a[1]) * 2) / 3];
+
+        return (
+          <React.Fragment key={i}>
+            <Node x={x} y={y} r={r} spec={sp} index={i + 1} delay={delay}
+              labelPos={y < cy ? "above" : "below"} />
+            <Link a={a} b={b} c1={c1} c2={c2}
+              color={COLOR[(out ? sp.color : spec.center.color) ?? "teal"]}
+              start={delay + s(0.35)} dur={s(0.6)} particles={3} />
+          </React.Fragment>
+        );
+      })}
+      <Footnote text={spec.footnote} at={s(0.9) + n * s(0.25) + s(0.8)} />
+    </>
+  );
+};
+
+const BarsDiagram: React.FC<{ spec: Spec<"bars"> }> = ({ spec }) => {
+  const { frame, s } = useT();
+  const n = spec.bars.length;
+  const baseY = 335, maxH = 230;
+  const bw = n <= 3 ? 130 : 90;
+  const gap = 60;
+  const total = n * bw + (n - 1) * gap;
+  const x0 = (1000 - total) / 2;
+  const max = Math.max(...spec.bars.map((b) => b.value), 1);
+  const base = stage(frame, 0, s(0.5));
+
+  return (
+    <>
+      <path d={`M${x0 - 30} ${baseY} H${x0 + total + 30}`} stroke={C.muted}
+        strokeWidth="3" strokeLinecap="round" pathLength={1}
+        strokeDasharray="1 1" strokeDashoffset={1 - base}
+        opacity={base > 0 ? 1 : 0} />
+      {spec.bars.map((bar, i) => {
+        const col = COLOR[bar.color ?? "teal"];
+        const p = stage(frame, s(0.4) + i * s(0.3), s(0.9));
+        const h = (bar.value / max) * maxH * p;
+        const x = x0 + i * (bw + gap);
+        return (
+          <g key={i}>
+            <rect x={x} y={baseY - h} width={bw} height={Math.max(h, 0)} rx="8"
+              fill={col} fillOpacity=".25" stroke={col} strokeWidth="3" />
+            <text x={x + bw / 2} y={baseY - h - 14} textAnchor="middle"
+              fill={col} fontSize="28" fontWeight="700" opacity={p}>
+              {Math.round(bar.value * p)}{spec.suffix ?? ""}
+            </text>
+            <text x={x + bw / 2} y={baseY + 34} textAnchor="middle"
+              fill={C.muted} fontSize="19" opacity={stage(frame, s(0.6) + i * s(0.3), s(0.4))}>
+              {bar.label}
+            </text>
+          </g>
+        );
+      })}
+      <Footnote text={spec.footnote} at={s(0.4) + n * s(0.3) + s(0.8)} />
+    </>
+  );
+};
+
+const Diagram: React.FC<{ spec: VisualSpec }> = ({ spec }) => (
+  <svg viewBox="0 0 1000 430" width="100%" height="100%">
+    {spec.type === "flow" && <FlowDiagram spec={spec} />}
+    {spec.type === "hub" && <HubDiagram spec={spec} />}
+    {spec.type === "bars" && <BarsDiagram spec={spec} />}
+  </svg>
+);
+
+/* ──────────────────────────────────────────────────────────────
+   Spec resolution: scene.visual → topic preset → generic fallback
+   Presets are plain data, so adding a topic never means new JSX.
+   ────────────────────────────────────────────────────────────── */
+
+const PRESETS: { match: RegExp; specs: VisualSpec[] }[] = [
+  {
+    match: /\b(solar|photovoltaic|photovoltaics)\b/i,
+    specs: [
+      {
+        type: "flow", title: "Capturing Sunlight",
+        nodes: [
+          { label: "SUNLIGHT", icon: "sun", color: "gold" },
+          { label: "SOLAR PANELS", icon: "panel", color: "teal" },
+          { label: "YOUR HOME", icon: "house", color: "teal" },
+        ],
+      },
+      {
+        type: "hub", title: "Cells Work Together", direction: "in",
+        center: { label: "SOLAR MODULE", icon: "panel", color: "teal" },
+        satellites: [
+          { label: "CELL", icon: "cell", color: "teal" },
+          { label: "CELL", icon: "cell", color: "teal" },
+          { label: "CELL", icon: "cell", color: "teal" },
+          { label: "CELL", icon: "cell", color: "teal" },
+        ],
+        footnote: "Connected cells add up to usable power",
+      },
+      {
+        type: "flow", title: "Inside a Solar Cell",
+        nodes: [
+          { label: "PHOTONS", icon: "sun", color: "gold" },
+          { label: "SILICON CELL", icon: "cell", color: "teal" },
+          { label: "ELECTRON FLOW", icon: "bolt", color: "gold" },
+        ],
+      },
+      {
+        type: "flow", title: "From DC to AC",
+        nodes: [
+          { label: "DC POWER", icon: "panel", color: "teal" },
+          { label: "INVERTER", icon: "inverter", color: "gold" },
+          { label: "AC POWER", icon: "house", color: "teal" },
+        ],
+        footnote: "DC electricity is converted to AC",
+      },
+      {
+        type: "hub", title: "Powering Your Home", direction: "out",
+        center: { label: "HOME", icon: "house", color: "teal" },
+        satellites: [
+          { label: "LIGHTS", icon: "bolt", color: "gold" },
+          { label: "APPLIANCES", icon: "inverter", color: "teal" },
+          { label: "DEVICES", icon: "gear", color: "purple" },
+        ],
+      },
+    ],
+  },
+  {
+    match: /\bvaccin\w*\b|\bimmuni[sz]ation\b/i,
+    specs: [
+      {
+        type: "flow", title: "Meet the immune system",
+        nodes: [
+          { label: "IMMUNE DEFENSE", icon: "immune", color: "teal" },
+          { label: "POTENTIAL THREAT", icon: "virus", color: "red" },
+        ],
+      },
+      {
+        type: "flow", title: "Introducing a vaccine",
+        nodes: [
+          { label: "VACCINE", icon: "syringe", color: "gold" },
+          { label: "BODY'S CELLS", icon: "immune", color: "teal" },
+        ],
+      },
+      {
+        type: "flow", title: "Recognizing an antigen",
+        nodes: [
+          { label: "MICROBE-LIKE SHAPE", icon: "virus", color: "red" },
+          { label: "SURFACE PROTEIN", icon: "protein", color: "teal" },
+        ],
+        footnote: "Different vaccines can present different antigens",
+      },
+      {
+        type: "flow", title: "The immune response begins",
+        nodes: [
+          { label: "IMMUNE RECEPTOR", icon: "antibody", color: "teal" },
+          { label: "ANTIGEN SIGNAL", icon: "virus", color: "red" },
+        ],
+      },
+      {
+        type: "flow", title: "Preparing for the future",
+        nodes: [
+          { label: "IMMUNE MEMORY", icon: "immune", color: "teal" },
+          { label: "READY", icon: "shield", color: "gold" },
+          { label: "FUTURE EXPOSURE", icon: "virus", color: "red" },
+        ],
+      },
+      {
+        type: "flow", title: "From mRNA to protein",
+        nodes: [
+          { label: "mRNA INSTRUCTIONS", icon: "rna", color: "gold" },
+          { label: "CELL MACHINERY", icon: "gear", color: "teal" },
+          { label: "PROTEIN PRODUCT", icon: "protein", color: "purple" },
+        ],
+      },
+      {
+        type: "flow", title: "Combining antigens",
+        nodes: [
+          { label: "WEAKER ANTIGEN", icon: "virus", color: "red" },
+          { label: "JOINED", icon: "link", color: "gold" },
+          { label: "CARRIER ANTIGEN", icon: "protein", color: "teal" },
+        ],
+      },
+      {
+        type: "hub", title: "Building immune memory", direction: "in",
+        center: { label: "PATHOGEN", icon: "virus", color: "red" },
+        satellites: [
+          { label: "RECOGNITION", icon: "antibody", color: "teal" },
+          { label: "RESPONSE", icon: "gear", color: "gold" },
+          { label: "MEMORY", icon: "shield", color: "purple" },
+        ],
+      },
+    ],
+  },
+];
+
+const shortLabel = (text: string): string => {
+  const words = text.replace(/[^\w\s'-]/g, "").split(/\s+/).filter(Boolean)
+    .slice(0, 3).join(" ").toUpperCase();
+  return words.length > 20 ? `${words.slice(0, 19)}…` : words;
+};
+
+/** Last resort for topics with no preset and no `visual` on the scene. */
+const fallbackSpec = (scene: ExplainerScene): VisualSpec => {
+  const icons: IconName[] = ["dot", "gear", "check"];
+  const colors: ColorName[] = ["teal", "gold", "purple"];
+  const parts = scene.narration
+    .split(/[,;:.!?]\s*|\s+(?:and|then|so|which|because)\s+/i)
+    .map((p) => p.trim())
+    .filter((p) => p.split(/\s+/).length >= 2)
+    .slice(0, 3);
+
+  if (parts.length < 2) {
+    return {
+      type: "flow",
+      nodes: [
+        { label: "INPUT", icon: "dot", color: "teal" },
+        { label: "PROCESS", icon: "gear", color: "gold" },
+        { label: "OUTCOME", icon: "check", color: "purple" },
+      ],
+    };
+  }
+  return {
+    type: "flow",
+    nodes: parts.map((p, i) => ({ label: shortLabel(p), icon: icons[i], color: colors[i] })),
+  };
+};
+
+const resolveSpec = (scene: ExplainerScene, topic: string): VisualSpec => {
+  if (scene.visual) return scene.visual;
+  const preset = PRESETS.find((p) => p.match.test(topic));
+  if (preset) return preset.specs[(scene.sceneNumber - 1) % preset.specs.length];
+  return fallbackSpec(scene);
+};
+
+const sceneTitle = (spec: VisualSpec, scene: ExplainerScene): string => {
+  if (spec.title) return spec.title;
+  const first = scene.narration.split(/[.!?;:]/)[0].trim();
+  if (!first) return `Key idea ${scene.sceneNumber}`;
+  return first.length > 44 ? `${first.slice(0, 41).trimEnd()}…` : first;
+};
+
+/* ──────────────────────────────────────────────────────────────
+   Scene chrome
+   ────────────────────────────────────────────────────────────── */
+
+const Ambient: React.FC = () => {
+  const { t } = useT();
+  const dots = useMemo(
+    () =>
+      Array.from({ length: 18 }, (_, i) => ({
+        x: (i * 137.5) % 100,
+        y: (i * 61.8) % 100,
+        size: 3 + (i % 3) * 2,
+        hz: 0.04 + (i % 5) * 0.015,
+        amp: 10 + (i % 4) * 6,
+      })),
+    [],
+  );
+  return (
+    <>
+      {dots.map((d, i) => (
+        <div key={i} style={{
+          position: "absolute", left: `${d.x}%`, top: `${d.y}%`,
+          width: d.size, height: d.size, borderRadius: "50%",
+          background: C.teal, opacity: 0.12,
+          transform: `translate(${osc(t, d.hz, d.amp, i)}px, ${osc(t, d.hz * 1.3, d.amp, i * 2)}px)`,
+        }} />
+      ))}
+    </>
+  );
+};
+
+const Caption: React.FC<{ text: string; duration: number }> = ({ text, duration }) => {
+  const { frame, s } = useT();
+  const words = useMemo(() => text.split(/\s+/).filter(Boolean), [text]);
+  const startAt = s(0.35);
+  const per = Math.max(1, (duration * 0.88 - startAt) / words.length);
+  const active = Math.floor((frame - startAt) / per);
+
+  return (
+    <div style={{ fontSize: text.length > 150 ? 19 : 22, lineHeight: 1.4, fontWeight: 500 }}>
+      {words.map((w, i) => {
+        const st = startAt + i * per;
+        const rev = interpolate(frame, [st, st + 5], [0, 1], CLAMP);
+        return (
+          <span key={i} style={{
+            display: "inline-block", marginRight: "0.28em",
+            opacity: 0.2 + 0.8 * rev,
+            transform: `translateY(${(1 - rev) * 4}px)`,
+            color: i === active ? C.teal : C.white,
+          }}>
+            {w}
+          </span>
+        );
+      })}
+    </div>
+  );
+};
+
+const Scene: React.FC<{ scene: ExplainerScene; topic: string; totalScenes: number }> = ({
+  scene, topic, totalScenes,
+}) => {
+  const { frame, s } = useT();
+  const spec = useMemo(() => resolveSpec(scene, topic), [scene, topic]);
+  const title = sceneTitle(spec, scene);
+
+  // Fade in only; the outgoing scene stays mounted underneath for OVERLAP frames.
+  const fadeIn = interpolate(frame, [0, OVERLAP], [0, 1], CLAMP);
+  const head = stage(frame, 0, s(0.7));
+  const titleIn = stage(frame, 5, s(0.7));
+  const panelIn = stage(frame, 8, s(0.7));
+  const drift = interpolate(frame, [0, scene.durationInFrames + OVERLAP], [1, 1.035], CLAMP);
+
+  return (
+    <AbsoluteFill style={{
+      background: `radial-gradient(ellipse at 50% 45%, #172943 0%, ${C.bg} 72%)`,
+      color: C.white,
+      fontFamily: "Arial, Helvetica, sans-serif",
+      opacity: fadeIn,
+      overflow: "hidden",
+    }}>
+      <Ambient />
+
       <div style={{
         position: "absolute", top: 0, left: 0, right: 0, height: 6,
         background: `linear-gradient(90deg, ${C.teal}, ${C.gold}, ${C.red})`,
@@ -336,69 +781,80 @@ const Scene: React.FC<{ scene: ExplainerScene; topic: string }> = ({ scene, topi
       <div style={{
         position: "absolute", top: 35, left: 64, right: 64,
         display: "flex", justifyContent: "space-between",
-        fontSize: 15, color: C.muted, letterSpacing: 3,
+        fontSize: 15, color: C.muted, letterSpacing: 3, opacity: head,
       }}>
         <span>FIELD NOTES / EXPLAINED</span>
-        <span>{String(scene.sceneNumber).padStart(2, "0")} / {String(8).padStart(2, "0")}</span>
+        <span>{String(scene.sceneNumber).padStart(2, "0")} / {String(totalScenes).padStart(2, "0")}</span>
       </div>
 
       <div style={{
-        position: "absolute", top: 82, left: 72, right: 72,
-        textAlign: "center",
-        transform: `translateY(${interpolate(entrance, [0, 1], [18, 0])}px)`,
-        opacity: entrance,
+        position: "absolute", top: 82, left: 72, right: 72, textAlign: "center",
+        opacity: titleIn,
+        transform: `translateY(${(1 - titleIn) * 18}px)`,
       }}>
         <div style={{
           color: C.teal, fontSize: 14, letterSpacing: 5,
           textTransform: "uppercase", marginBottom: 10,
         }}>{topic}</div>
-        <div style={{
-          fontSize: 39, lineHeight: 1.15, fontWeight: 700,
-          letterSpacing: -0.7,
-        }}>{title}</div>
+        <div style={{ fontSize: 39, lineHeight: 1.15, fontWeight: 700, letterSpacing: -0.7 }}>
+          {title}
+        </div>
       </div>
 
       <div style={{
         position: "absolute", top: 165, left: 95, right: 95, height: 355,
-        transform: `scale(${interpolate(entrance, [0, 1], [0.94, 1])})`,
+        transform: `scale(${(0.96 + 0.04 * panelIn) * drift})`,
         transformOrigin: "center",
       }}>
-        <Visual scene={scene} />
+        <Diagram spec={spec} />
       </div>
 
       <div style={{
         position: "absolute", left: 100, right: 100, bottom: 38,
         minHeight: 105, boxSizing: "border-box",
         padding: "20px 30px", borderRadius: 16,
-        border: `1px solid #33445C`,
-        borderLeft: `5px solid ${C.teal}`,
+        border: "1px solid #33445C", borderLeft: `5px solid ${C.teal}`,
         background: "rgba(18, 27, 46, .94)",
         display: "flex", alignItems: "center", justifyContent: "center",
         textAlign: "center",
-        transform: `translateY(${interpolate(entrance, [0, 1], [15, 0])}px)`,
-        opacity: entrance,
+        opacity: panelIn,
+        transform: `translateY(${(1 - panelIn) * 15}px)`,
       }}>
-        <div style={{ fontSize: 22, lineHeight: 1.4, fontWeight: 500 }}>
-          {scene.narration}
-        </div>
+        <Caption text={scene.narration} duration={scene.durationInFrames} />
       </div>
-
-      <Audio src={staticFile(scene.audioFile)} />
     </AbsoluteFill>
   );
 };
 
+/* ──────────────────────────────────────────────────────────────
+   Root composition
+   ────────────────────────────────────────────────────────────── */
+
 export const Explainer: React.FC<ExplainerProps> = ({ topic, scenes }) => (
   <AbsoluteFill style={{ backgroundColor: C.bg }}>
     {scenes.map((scene) => (
-      <Sequence
-        key={scene.sceneNumber}
-        from={scene.from}
-        durationInFrames={scene.durationInFrames}
-        name={`Scene ${scene.sceneNumber}`}
-      >
-        <Scene scene={scene} topic={topic} />
-      </Sequence>
+      <React.Fragment key={scene.sceneNumber}>
+        <Sequence
+          from={scene.from}
+          durationInFrames={scene.durationInFrames + OVERLAP}
+          name={`Scene ${scene.sceneNumber}`}
+        >
+          <Scene scene={scene} topic={topic} totalScenes={scenes.length} />
+        </Sequence>
+        <Sequence
+          from={scene.from}
+          durationInFrames={scene.durationInFrames}
+          name={`Audio ${scene.sceneNumber}`}
+        >
+          <Audio
+            src={staticFile(scene.audioFile)}
+            volume={(f) =>
+              interpolate(f, [0, 3, scene.durationInFrames - 6, scene.durationInFrames],
+                [0, 1, 1, 0], CLAMP)
+            }
+          />
+        </Sequence>
+      </React.Fragment>
     ))}
   </AbsoluteFill>
 );

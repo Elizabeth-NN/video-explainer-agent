@@ -63,3 +63,5 @@ remotion/node_modules/
 remotion/public/audio/
 remotion/input-props.json
 remotion/out/
+# Local backup files
+*.bak
