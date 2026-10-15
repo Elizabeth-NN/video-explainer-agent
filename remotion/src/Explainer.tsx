@@ -9,7 +9,7 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
-
+import { Illustration, pickIllustration, type IllustrationId, type Focus } from "./illustrations";
 /* ──────────────────────────────────────────────────────────────
    Types
    ────────────────────────────────────────────────────────────── */
@@ -31,6 +31,7 @@ export type NodeSpec = { label: string; icon: IconName; color?: ColorName };
  */
 export type VisualSpec =
   | { type: "flow"; title?: string; nodes: NodeSpec[]; footnote?: string }
+  | { type: "illustration"; id: IllustrationId; title?: string; footnote?: string; focus?: Focus }
   | {
       type: "hub";
       title?: string;
@@ -519,11 +520,14 @@ const BarsDiagram: React.FC<{ spec: Spec<"bars"> }> = ({ spec }) => {
   );
 };
 
-const Diagram: React.FC<{ spec: VisualSpec }> = ({ spec }) => (
+const Diagram: React.FC<{ spec: VisualSpec; duration: number }> = ({ spec, duration }) => (
   <svg viewBox="0 0 1000 430" width="100%" height="100%">
     {spec.type === "flow" && <FlowDiagram spec={spec} />}
     {spec.type === "hub" && <HubDiagram spec={spec} />}
     {spec.type === "bars" && <BarsDiagram spec={spec} />}
+    {spec.type === "illustration" && (
+      <Illustration id={spec.id} duration={duration} focus={spec.focus} footnote={spec.footnote} />
+    )}
   </svg>
 );
 
@@ -947,11 +951,11 @@ const heartSpecForScene = (scene: ExplainerScene): VisualSpec => {
 };
 
 const resolveSpec = (scene: ExplainerScene, topic: string): VisualSpec => {
-  // Prefer an explicit, narration-derived visual from the backend.
-  // Topic-specific visuals remain fallbacks when no visual was generated.
   if (scene.visual) return scene.visual;
 
   const sceneText = `${scene.narration} ${scene.visualDescription || ""}`;
+  const pick = pickIllustration(topic, sceneText);
+  if (pick) return { type: "illustration", ...pick };
   const isSolar = /\b(solar|photovoltaic|photovoltaics|sunlight)\b/i.test(
     `${topic} ${sceneText}`,
   );
@@ -1096,7 +1100,7 @@ const Scene: React.FC<{ scene: ExplainerScene; topic: string; totalScenes: numbe
         transform: `scale(${(0.96 + 0.04 * panelIn) * drift})`,
         transformOrigin: "center",
       }}>
-        <Diagram spec={spec} />
+        <Diagram spec={spec} duration={scene.durationInFrames} />
       </div>
 
       <div style={{

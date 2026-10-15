@@ -1,0 +1,162 @@
+{
+  "topic": "Inflation",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Imagine your money buying less over time.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: Imagine your money buying less over time. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "audioFile": "inflation-audio/scene_001.mp3",
+      "durationInFrames": 77,
+      "from": 0,
+      "visual": {
+        "type": "flow",
+        "title": "Money Buys Less",
+        "nodes": [
+          {
+            "label": "MONEY",
+            "icon": "dot",
+            "color": "teal"
+          },
+          {
+            "label": "FEWER GOODS",
+            "icon": "dot",
+            "color": "gold"
+          }
+        ]
+      }
+    },
+    {
+      "sceneNumber": 2,
+      "narration": "Inflation is a sustained increase in the general price level of goods and services in an economy over time.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: Inflation is a sustained increase in the general price level of goods and services in an economy over time. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "audioFile": "inflation-audio/scene_002.mp3",
+      "durationInFrames": 163,
+      "from": 77,
+      "visual": {
+        "type": "flow",
+        "title": "What Is Inflation?",
+        "nodes": [
+          {
+            "label": "SUSTAINED RISE",
+            "icon": "dot",
+            "color": "teal"
+          },
+          {
+            "label": "GENERAL PRICE LEVEL",
+            "icon": "dot",
+            "color": "gold"
+          }
+        ]
+      }
+    },
+    {
+      "sceneNumber": 3,
+      "narration": "When the general price level rises, each unit of currency buys fewer goods and services, reducing the purchasing power of money.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: When the general price level rises, each unit of currency buys fewer goods and services, reducing the purchasing power of money. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "audioFile": "inflation-audio/scene_003.mp3",
+      "durationInFrames": 193,
+      "from": 240,
+      "visual": {
+        "type": "flow",
+        "title": "Purchasing Power",
+        "nodes": [
+          {
+            "label": "PRICES RISE",
+            "icon": "dot",
+            "color": "gold"
+          },
+          {
+            "label": "BUYING POWER FALLS",
+            "icon": "dot",
+            "color": "teal"
+          }
+        ]
+      }
+    },
+    {
+      "sceneNumber": 4,
+      "narration": "An inflation rate measures the percentage change in a general price index over a period, helping describe how prices change across the economy.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: An inflation rate measures the percentage change in a general price index over a period, helping describe how prices change across the economy. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "audioFile": "inflation-audio/scene_004.mp3",
+      "durationInFrames": 210,
+      "from": 433,
+      "visual": {
+        "type": "flow",
+        "title": "Measuring Inflation",
+        "nodes": [
+          {
+            "label": "PRICE INDEX",
+            "icon": "dot",
+            "color": "teal"
+          },
+          {
+            "label": "PERCENTAGE CHANGE",
+            "icon": "dot",
+            "color": "gold"
+          }
+        ]
+      }
+    },
+    {
+      "sceneNumber": 5,
+      "narration": "Deflation is a sustained decrease in the general price level of goods and services, the opposite direction from inflation.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: Deflation is a sustained decrease in the general price level of goods and services, the opposite direction from inflation. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "audioFile": "inflation-audio/scene_005.mp3",
+      "durationInFrames": 180,
+      "from": 643,
+      "visual": {
+        "type": "flow",
+        "title": "Inflation and Deflation",
+        "nodes": [
+          {
+            "label": "INFLATION",
+            "icon": "dot",
+            "color": "gold"
+          },
+          {
+            "label": "PRICE LEVEL RISES",
+            "icon": "dot",
+            "color": "teal"
+          },
+          {
+            "label": "DEFLATION",
+            "icon": "dot",
+            "color": "gold"
+          },
+          {
+            "label": "PRICE LEVEL FALLS",
+            "icon": "dot",
+            "color": "teal"
+          }
+        ]
+      }
+    },
+    {
+      "sceneNumber": 6,
+      "narration": "Inflation can also occur when demand for goods and services grows faster than supply.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: Inflation can also occur when demand for goods and services grows faster than supply. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "audioFile": "inflation-audio/scene_006.mp3",
+      "durationInFrames": 134,
+      "from": 823,
+      "visual": {
+        "type": "flow",
+        "title": "Demand and Supply",
+        "nodes": [
+          {
+            "label": "DEMAND OUTPACES SUPPLY",
+            "icon": "dot",
+            "color": "teal"
+          },
+          {
+            "label": "UPWARD PRICE PRESSURE",
+            "icon": "dot",
+            "color": "gold"
+          }
+        ]
+      }
+    }
+  ]
+}

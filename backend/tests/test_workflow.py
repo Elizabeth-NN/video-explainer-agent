@@ -52,6 +52,34 @@ def test_vaccine_relevance_excludes_unrelated_music_band():
     )
 
 
+def test_inflation_relevance_excludes_cosmic_inflation():
+    topic = "Inflation"
+
+    assert is_relevant_source(
+        topic,
+        "Inflation",
+        "Inflation is a sustained increase in the general price level "
+        "of goods and services in an economy.",
+    )
+    assert is_relevant_source(
+        topic,
+        "Consumer price index",
+        "The consumer price index tracks changes in consumer prices "
+        "and helps measure the inflation rate.",
+    )
+    assert not is_relevant_source(
+        topic,
+        "Inflation (cosmology)",
+        "Cosmic inflation describes the rapid expansion of the universe "
+        "during its earliest moments.",
+    )
+    assert not is_relevant_source(
+        topic,
+        "Inflation",
+        "Cosmic inflation describes the rapid expansion of the universe.",
+    )
+
+
 def initial_state(topic="How vaccines work"):
     return {
         "topic": topic,
@@ -445,6 +473,40 @@ def test_critic_rejects_script_with_unsupported_sentence():
     assert result["approved"] is False
     assert "limited word overlap" in result["critique"]
 
+
+
+def test_inflation_fallback_writer_explains_economic_inflation():
+    from app.graph.nodes import scriptwriter_node
+
+    state = initial_state(topic="Inflation")
+    state["research_sources"] = [
+        {
+            "title": "Inflation",
+            "url": "https://example.com/inflation",
+            "summary": (
+                "Inflation is a sustained increase in the general price "
+                "level of goods and services in an economy over time. "
+                "When the general price level rises, each unit of currency "
+                "buys fewer goods and services, reducing the purchasing "
+                "power of money. The inflation rate measures the percentage "
+                "change in a general price index over a period. Deflation "
+                "is a sustained decrease in the general price level of "
+                "goods and services."
+            ),
+        }
+    ]
+
+    script = scriptwriter_node(state)["script"]
+    lower = script.lower()
+
+    assert script.startswith("Imagine")
+    assert 80 <= len(script.split()) <= 180
+    assert "general price level" in lower
+    assert "goods and services" in lower
+    assert "purchasing power" in lower
+    assert "cosmic inflation" not in lower
+    assert "another source" not in lower
+    assert "the research describes this idea" not in lower
 
 
 def test_solar_fallback_writer_explains_conversion_process():
