@@ -46,6 +46,36 @@ export type VisualSpec =
       bars: { label: string; value: number; color?: ColorName }[];
       suffix?: string;
       footnote?: string;
+    }
+  | {
+      type: "scene-graph";
+      title?: string;
+      nodes: {
+        id: string;
+        label: string;
+        x: number;
+        y: number;
+        size?: number;
+        color?: string;
+        appearAt?: number;
+      }[];
+      links: {
+        from: string;
+        to: string;
+        label?: string;
+        color?: string;
+        style?: "solid" | "dashed";
+        appearAt?: number;
+      }[];
+      groups?: {
+        label: string;
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        color?: string;
+      }[];
+      footnote?: string;
     };
 
 export type ExplainerScene = {
@@ -520,11 +550,156 @@ const BarsDiagram: React.FC<{ spec: Spec<"bars"> }> = ({ spec }) => {
   );
 };
 
+const SceneGraphDiagram: React.FC<{
+  spec: Spec<"scene-graph">;
+}> = ({ spec }) => {
+  const { frame, s } = useT();
+
+  const nodesById = new Map(spec.nodes.map((node) => [node.id, node]));
+
+  return (
+    <>
+      {spec.groups?.map((group, index) => {
+        const p = stage(frame, 0, s(0.5));
+        const color = group.color ?? C.purple;
+
+        return (
+          <g key={`group-${index}`} opacity={p}>
+            <rect
+              x={group.x}
+              y={group.y}
+              width={group.width}
+              height={group.height}
+              rx="18"
+              fill={color}
+              fillOpacity=".06"
+              stroke={color}
+              strokeOpacity=".55"
+              strokeWidth="2"
+              strokeDasharray="8 7"
+            />
+            <text
+              x={group.x + 14}
+              y={group.y + 25}
+              fill={color}
+              fontSize="15"
+              fontWeight="600"
+            >
+              {group.label}
+            </text>
+          </g>
+        );
+      })}
+
+      {spec.links.map((link, index) => {
+        const from = nodesById.get(link.from);
+        const to = nodesById.get(link.to);
+
+        if (!from || !to) return null;
+
+        const start = s(link.appearAt ?? 0.4);
+        const progress = stage(frame, start, s(0.55));
+        const color = link.color ?? C.teal;
+        const dx = to.x - from.x;
+        const dy = to.y - from.y;
+        const length = Math.max(1, Math.hypot(dx, dy));
+        const ux = dx / length;
+        const uy = dy / length;
+        const fromRadius = from.size ?? 38;
+        const toRadius = to.size ?? 38;
+        const x1 = from.x + ux * fromRadius;
+        const y1 = from.y + uy * fromRadius;
+        const x2 = to.x - ux * (toRadius + 12);
+        const y2 = to.y - uy * (toRadius + 12);
+        const mx = (x1 + x2) / 2;
+        const my = (y1 + y2) / 2;
+
+        return (
+          <g key={`link-${index}`} opacity={progress}>
+            <line
+              x1={x1}
+              y1={y1}
+              x2={x2}
+              y2={y2}
+              stroke={color}
+              strokeWidth="3"
+              strokeDasharray={link.style === "dashed" ? "8 7" : undefined}
+              strokeLinecap="round"
+            />
+            <path
+              d={`M${x2 - ux * 10 - uy * 6} ${y2 - uy * 10 + ux * 6} L${x2} ${y2} L${x2 - ux * 10 + uy * 6} ${y2 - uy * 10 - ux * 6}`}
+              fill="none"
+              stroke={color}
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            {link.label && (
+              <text
+                x={mx}
+                y={my - 10}
+                textAnchor="middle"
+                fill={C.white}
+                fontSize="14"
+                stroke={C.bg}
+                strokeWidth="5"
+                paintOrder="stroke"
+              >
+                {link.label}
+              </text>
+            )}
+          </g>
+        );
+      })}
+
+      {spec.nodes.map((node, index) => {
+        const start = s(node.appearAt ?? 0.2 + index * 0.18);
+        const p = stage(frame, start, s(0.45));
+        const radius = node.size ?? 38;
+        const color = node.color ?? C.teal;
+
+        return (
+          <g
+            key={node.id}
+            transform={`translate(${node.x} ${node.y}) scale(${0.85 + 0.15 * p})`}
+            opacity={p}
+          >
+            <circle r={radius + 7} fill={color} fillOpacity=".08" />
+            <circle
+              r={radius}
+              fill={C.panel}
+              stroke={color}
+              strokeWidth="3"
+            />
+            <circle r={radius - 7} fill={color} fillOpacity=".08" />
+            <text
+              x="0"
+              y={radius + 23}
+              textAnchor="middle"
+              fill={color}
+              fontSize="17"
+              fontWeight="600"
+            >
+              {node.label}
+            </text>
+          </g>
+        );
+      })}
+
+      <Footnote
+        text={spec.footnote}
+        at={s(0.5) + spec.nodes.length * s(0.18) + s(0.5)}
+      />
+    </>
+  );
+};
+
 const Diagram: React.FC<{ spec: VisualSpec; duration: number }> = ({ spec, duration }) => (
   <svg viewBox="0 0 1000 430" width="100%" height="100%">
     {spec.type === "flow" && <FlowDiagram spec={spec} />}
     {spec.type === "hub" && <HubDiagram spec={spec} />}
     {spec.type === "bars" && <BarsDiagram spec={spec} />}
+    {spec.type === "scene-graph" && <SceneGraphDiagram spec={spec} />}
     {spec.type === "illustration" && (
       <Illustration id={spec.id} duration={duration} focus={spec.focus} footnote={spec.footnote} />
     )}

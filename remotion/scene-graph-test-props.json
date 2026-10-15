@@ -1,0 +1,85 @@
+{
+  "topic": "The Water Cycle",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Sunlight drives evaporation. Water vapour cools and condenses into clouds, then falls as precipitation.",
+      "visualDescription": "The stages of the water cycle.",
+      "audioFile": "audio/scene_001.mp3",
+      "durationInFrames": 108,
+      "from": 0,
+      "visual": {
+        "type": "scene-graph",
+        "title": "The Water Cycle",
+        "nodes": [
+          {
+            "id": "sun",
+            "label": "SUNLIGHT",
+            "x": 130,
+            "y": 190,
+            "color": "#F2B84B",
+            "appearAt": 0.2
+          },
+          {
+            "id": "evaporation",
+            "label": "EVAPORATION",
+            "x": 370,
+            "y": 165,
+            "color": "#4FD1C5",
+            "appearAt": 0.5
+          },
+          {
+            "id": "clouds",
+            "label": "CONDENSATION",
+            "x": 630,
+            "y": 165,
+            "color": "#A78BFA",
+            "appearAt": 0.8
+          },
+          {
+            "id": "rain",
+            "label": "PRECIPITATION",
+            "x": 870,
+            "y": 190,
+            "color": "#4FD1C5",
+            "appearAt": 1.1
+          }
+        ],
+        "links": [
+          {
+            "from": "sun",
+            "to": "evaporation",
+            "label": "HEAT",
+            "appearAt": 0.5
+          },
+          {
+            "from": "evaporation",
+            "to": "clouds",
+            "label": "COOLING",
+            "appearAt": 1.0
+          },
+          {
+            "from": "clouds",
+            "to": "rain",
+            "label": "WATER RETURNS",
+            "appearAt": 1.5
+          }
+        ],
+        "groups": [
+          {
+            "label": "WATER CYCLE",
+            "x": 45,
+            "y": 75,
+            "width": 910,
+            "height": 210,
+            "color": "#A78BFA"
+          }
+        ],
+        "footnote": "Water continuously moves between Earth's surface and atmosphere."
+      }
+    }
+  ]
+}
