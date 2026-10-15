@@ -29,6 +29,64 @@ def _visual_description(topic: str, narration: str) -> str:
     """Describe a scene using its topic and actual narration."""
     text = f"{topic} {narration}".lower()
 
+    # Heart circulation: describe the relationship narrated in this scene.
+    if re.search(r"\bheart\b|\bcardiac\b", text):
+        if re.search(
+            r"venae cavae|returning from the body|enters the right side",
+            narration,
+            re.IGNORECASE,
+        ):
+            focus = (
+                "blood returning from the body and entering the right "
+                "side of the heart through the venae cavae"
+            )
+        elif re.search(
+            r"pulmonary artery|right side.*lungs|blood to the lungs",
+            narration,
+            re.IGNORECASE,
+        ):
+            focus = (
+                "the right side of the heart sending blood toward the "
+                "lungs through the pulmonary artery"
+            )
+        elif re.search(
+            r"left side|returning from the lungs|receives blood",
+            narration,
+            re.IGNORECASE,
+        ):
+            focus = (
+                "blood returning from the lungs and entering the left "
+                "side of the heart"
+            )
+        elif re.search(
+            r"four chambers|four valves|muscular organ|anatomy",
+            narration,
+            re.IGNORECASE,
+        ):
+            focus = (
+                "a clearly labelled heart with four chambers and the "
+                "valves mentioned in the narration"
+            )
+        elif re.search(
+            r"oxygen|nutrients|carbon dioxide|blood vessels|tissues",
+            narration,
+            re.IGNORECASE,
+        ):
+            focus = (
+                "blood moving through vessels and carrying the oxygen, "
+                "nutrients, or waste products named in the narration"
+            )
+        else:
+            focus = "the heart and the specific blood-flow idea being explained"
+
+        return (
+            f"Illustrate {focus}. Use a simple, clearly labelled "
+            "educational motion graphic. Show directional arrows only "
+            "for blood-flow relationships supported by the narration. "
+            f"Scene narration: {narration} Do not invent measurements "
+            "or unrelated anatomical details."
+        )
+
     # Vaccine concepts: match the idea being narrated, not a fixed
     # scene number. Keep descriptions illustrative rather than factual
     # additions to the approved script.

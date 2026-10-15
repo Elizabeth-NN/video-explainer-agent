@@ -517,6 +517,52 @@ def test_solar_fallback_omits_unsupported_technical_claims():
     assert "alternating current" not in script
     assert "temperature" not in script
 
+def test_heart_fallback_explains_blood_flow_sequence():
+    from app.graph.nodes import scriptwriter_node
+
+    state = initial_state(topic="How the human heart pumps blood")
+    state["research_sources"] = [
+        {
+            "title": "Anatomy of the human heart",
+            "url": "https://example.com/heart-anatomy",
+            "summary": (
+                "The heart is a muscular organ situated in the mediastinum. "
+                "It consists of four chambers and four valves. The right "
+                "side receives de-oxygenated blood through the superior "
+                "and inferior venae cavae and pumps blood to the lungs "
+                "through the pulmonary artery. The left side receives "
+                "saturated blood from the lungs."
+            ),
+        },
+        {
+            "title": "Heart",
+            "url": "https://example.com/heart",
+            "summary": (
+                "The heart pumps blood through the blood vessels. "
+                "Blood carries oxygen and nutrients to tissue and carries "
+                "metabolic waste such as carbon dioxide to the lungs."
+            ),
+        },
+    ]
+
+    script = scriptwriter_node(state)["script"]
+    lower = script.lower()
+
+    assert script.startswith("Imagine")
+    assert 80 <= len(script.split()) <= 180
+    for term in (
+        "right side",
+        "venae cavae",
+        "pulmonary artery",
+        "lungs",
+        "left side",
+        "blood vessels",
+    ):
+        assert term in lower
+    assert "another source" not in lower
+    assert "retrieved evidence relates" not in lower
+
+
 def test_generic_fallback_avoids_research_process_disclaimers():
     from app.graph.nodes import scriptwriter_node
 

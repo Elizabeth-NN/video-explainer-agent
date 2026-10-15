@@ -135,3 +135,30 @@ def test_general_scene_description_does_not_assume_a_specific_subject():
     assert "water vapor cools" in description
     assert "solar panel" not in description
     assert "vaccine" not in description
+
+
+def test_heart_scene_visual_descriptions_follow_blood_flow_narration():
+    result = scene_planner_node(
+        {
+            "topic": "How the human heart pumps blood",
+            "script": (
+                "Blood returning from the body enters the right side "
+                "through the superior and inferior venae cavae. "
+                "The right side pumps blood to the lungs through the "
+                "pulmonary artery. The left side receives blood returning "
+                "from the lungs."
+            ),
+            "approved": True,
+        }
+    )
+
+    descriptions = [
+        scene["visual_description"].lower()
+        for scene in result["scenes"]
+    ]
+
+    assert "illustrate blood returning from the body" in descriptions[0]
+    assert "sending blood toward the lungs through the pulmonary artery" in descriptions[1]
+    assert "blood returning from the lungs and entering the left side" in descriptions[2]
+    assert all("scene narration:" in item for item in descriptions)
+    assert all("illustrate the specific idea in this scene" not in item for item in descriptions)

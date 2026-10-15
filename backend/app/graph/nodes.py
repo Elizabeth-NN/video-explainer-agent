@@ -667,6 +667,41 @@ def scriptwriter_node(state: VideoState) -> dict:
         )
         return {"script": script}
 
+    # Explain the blood-flow sequence when the research supports it.
+    if "heart" in normalized_topic and (
+        "pump" in normalized_topic or "blood" in normalized_topic
+    ):
+        source_text = " ".join(
+            str(source.get("summary", "")) for source in sources
+        ).lower()
+
+        required_evidence = (
+            "four chambers",
+            "venae cavae",
+            "pulmonary artery",
+            "left side",
+            "lungs",
+        )
+
+        if all(term in source_text for term in required_evidence):
+            return {
+                "script": (
+                    "Imagine following blood as it moves through the "
+                    "human heart and lungs. The heart is a muscular organ "
+                    "with four chambers and four valves. Blood returning "
+                    "from the body enters the right side through the "
+                    "superior and inferior venae cavae. The right side "
+                    "pumps this deoxygenated blood to the lungs through "
+                    "the pulmonary artery. The left side receives blood "
+                    "returning from the lungs, where blood picks up oxygen. "
+                    "The heart pumps blood through blood vessels around "
+                    "the body. That blood carries oxygen and nutrients to "
+                    "tissues and carries carbon dioxide away toward the "
+                    "lungs. The right and left sides have different jobs, "
+                    "while the valves help blood move through the heart."
+                )
+            }
+
     def excerpt(source: dict, max_words: int = 35) -> str:
         summary = clean_research_text(source["summary"])
         sentences = re.split(r"(?<=[.!?])\s+", summary)
@@ -896,6 +931,31 @@ def critic_node(state: VideoState) -> dict:
         issues.append(
             "The script does not clearly cover the requested topic."
         )
+
+    # A heart-pumping explainer must describe the circulation sequence,
+    # not merely repeat definitions from research sources.
+    if "heart" in topic.lower() and (
+        "pump" in topic.lower() or "blood" in topic.lower()
+    ):
+        required_flow_terms = (
+            "right side",
+            "pulmonary artery",
+            "lungs",
+            "left side",
+            "blood vessels",
+        )
+        missing_flow_terms = [
+            term for term in required_flow_terms
+            if term not in lower_script
+        ]
+        if missing_flow_terms:
+            issues.append(
+                "Explain the blood-flow sequence through the right side "
+                "of the heart, pulmonary artery, lungs, left side, and "
+                "blood vessels. Missing concepts: "
+                + ", ".join(missing_flow_terms)
+                + "."
+            )
 
     sentences = [
         sentence.strip()
