@@ -57,9 +57,14 @@ def test_generate_narration_creates_audio_and_manifest(tmp_path: Path):
         patch("app.services.narration.subprocess.run", side_effect=fake_run) as run,
     ):
         result = asyncio.run(
-            generate_narration(sample_scenes(), tmp_path)
+            generate_narration(
+                sample_scenes(),
+                tmp_path,
+                topic="How vaccines work",
+            )
         )
 
+    assert result["topic"] == "How vaccines work"
     assert result["scene_count"] == 2
     assert result["voice"] == "en-US-JennyNeural"
     assert result["total_audio_duration_seconds"] == 5.0

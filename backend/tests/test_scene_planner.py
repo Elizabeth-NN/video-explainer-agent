@@ -96,3 +96,42 @@ def test_approved_graph_output_contains_scenes():
     assert result["approved"] is True
     assert len(result["scenes"]) == 2
     assert result["scenes"][0]["narration"].startswith("Vaccines help")
+
+
+
+def test_scene_visual_descriptions_follow_narrated_concepts():
+    solar = scene_planner_node(
+        {
+            "topic": "How solar panels work",
+            "script": "A battery stores electricity for later use.",
+            "approved": True,
+        }
+    )["scenes"][0]
+
+    assert "battery" in solar["visual_description"].lower()
+    assert "narration" in solar["visual_description"].lower()
+
+    vaccine = scene_planner_node(
+        {
+            "topic": "How vaccines work",
+            "script": "This can help the body respond during future exposure.",
+            "approved": True,
+        }
+    )["scenes"][0]
+
+    assert "immune memory" in vaccine["visual_description"].lower()
+
+
+def test_general_scene_description_does_not_assume_a_specific_subject():
+    scene = scene_planner_node(
+        {
+            "topic": "How rain forms",
+            "script": "Water vapor cools and forms tiny droplets.",
+            "approved": True,
+        }
+    )["scenes"][0]
+
+    description = scene["visual_description"].lower()
+    assert "water vapor cools" in description
+    assert "solar panel" not in description
+    assert "vaccine" not in description

@@ -46,6 +46,7 @@ async def generate_narration(
     scenes: list[dict[str, Any]],
     output_dir: str | Path,
     voice: str = DEFAULT_VOICE,
+    topic: str | None = None,
 ) -> dict[str, Any]:
     """Generate per-scene MP3s, a combined track, and a JSON manifest."""
     if not scenes:
@@ -118,6 +119,7 @@ async def generate_narration(
     )
 
     manifest = {
+        "topic": topic,
         "voice": voice,
         "scene_count": len(manifest_scenes),
         "total_audio_duration_seconds": round(

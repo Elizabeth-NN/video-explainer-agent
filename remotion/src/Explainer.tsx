@@ -675,10 +675,202 @@ const fallbackSpec = (scene: ExplainerScene): VisualSpec => {
   };
 };
 
+/**
+ * Choose solar illustrations by the actual concept being narrated,
+ * rather than cycling through the topic's diagrams by scene number.
+ */
+const solarSpecForScene = (scene: ExplainerScene): VisualSpec => {
+  const text = `${scene.narration} ${scene.visualDescription || ""}`;
+
+  if (/\b(solar lighting|charge controller|LED lamp|lighting system)\b/i.test(text)) {
+    return {
+      type: "flow",
+      title: "From Sunlight to Light",
+      nodes: [
+        { label: "SOLAR PANEL", icon: "panel", color: "gold" },
+        { label: "BATTERY", icon: "cell", color: "teal" },
+        { label: "LED LAMP", icon: "bolt", color: "gold" },
+      ],
+      footnote: "A controller manages charging in systems that include one",
+    };
+  }
+
+  if (/\b(excited electrons?|electrons? become excited)\b/i.test(text)) {
+    return {
+      type: "flow",
+      title: "What Light Does Inside a Cell",
+      nodes: [
+        { label: "LIGHT PHOTONS", icon: "sun", color: "gold" },
+        { label: "SILICON CELL", icon: "cell", color: "teal" },
+        { label: "EXCITED ELECTRONS", icon: "bolt", color: "gold" },
+      ],
+      footnote: "Light gives electrons energy inside photovoltaic material",
+    };
+  }
+
+  if (/\b(flow through a circuit|electrons? flow|electrical circuit)\b/i.test(text)) {
+    return {
+      type: "flow",
+      title: "Electrons Moving Through a Circuit",
+      nodes: [
+        { label: "SOLAR CELL", icon: "cell", color: "teal" },
+        { label: "ELECTRON FLOW", icon: "bolt", color: "gold" },
+        { label: "DC ELECTRICITY", icon: "gear", color: "purple" },
+      ],
+      footnote: "A connected circuit allows electric current to flow",
+    };
+  }
+
+  if (/\b(batter(?:y|ies)|stored|storage)\b/i.test(text)) {
+    return {
+      type: "flow",
+      title: "Storing Solar Energy",
+      nodes: [
+        { label: "SOLAR PANEL", icon: "panel", color: "gold" },
+        { label: "CHARGE CONTROL", icon: "gear", color: "teal" },
+        { label: "BATTERY STORAGE", icon: "cell", color: "purple" },
+      ],
+      footnote: "Storage requires a battery and a suitable system",
+    };
+  }
+
+  if (/\b(direct current|DC electricity|\bDC\b)\b/i.test(text)) {
+    return {
+      type: "flow",
+      title: "Electricity from Solar Cells",
+      nodes: [
+        { label: "SOLAR CELLS", icon: "cell", color: "teal" },
+        { label: "DIRECT CURRENT", icon: "bolt", color: "gold" },
+        { label: "CONNECTED CIRCUIT", icon: "gear", color: "purple" },
+      ],
+      footnote: "Solar cells produce direct current electricity",
+    };
+  }
+
+  if (/\b(convert|conversion|light energy|electrical energy|photovoltaic)\b/i.test(text)) {
+    return {
+      type: "flow",
+      title: "Converting Light into Electricity",
+      nodes: [
+        { label: "SUNLIGHT", icon: "sun", color: "gold" },
+        { label: "SOLAR CELLS", icon: "cell", color: "teal" },
+        { label: "ELECTRICAL ENERGY", icon: "bolt", color: "purple" },
+      ],
+      footnote: "Photovoltaic cells convert light energy into electrical energy",
+    };
+  }
+
+  return {
+    type: "flow",
+    title: "Capturing Sunlight",
+    nodes: [
+      { label: "SUNLIGHT", icon: "sun", color: "gold" },
+      { label: "SOLAR PANEL", icon: "panel", color: "teal" },
+      { label: "ELECTRICITY", icon: "bolt", color: "purple" },
+    ],
+  };
+};
+
+/**
+ * Choose vaccine illustrations from the concept in the current narration.
+ * This works for both Gemini-written and fallback-written scripts.
+ */
+const vaccineSpecForScene = (scene: ExplainerScene): VisualSpec => {
+  const text = `${scene.narration} ${scene.visualDescription || ""}`;
+
+  if (/\b(memory|remember|future exposure|in the future|long.term protection)\b/i.test(text)) {
+    return {
+      type: "flow",
+      title: "Building Immune Memory",
+      nodes: [
+        { label: "FIRST EXPOSURE", icon: "virus", color: "red" },
+        { label: "IMMUNE MEMORY", icon: "immune", color: "teal" },
+        { label: "FASTER RESPONSE", icon: "shield", color: "gold" },
+      ],
+      footnote: "Immune memory can help the body recognize a threat later",
+    };
+  }
+
+  if (/\b(antibod|antigen|recogniz|recognis|bind|receptor)\w*\b/i.test(text)) {
+    return {
+      type: "flow",
+      title: "Recognizing an Antigen",
+      nodes: [
+        { label: "ANTIGEN", icon: "virus", color: "red" },
+        { label: "RECOGNITION", icon: "antibody", color: "teal" },
+        { label: "IMMUNE RESPONSE", icon: "immune", color: "gold" },
+      ],
+      footnote: "Immune recognition depends on specific molecular features",
+    };
+  }
+
+  if (/\b(mrna|messenger RNA|protein|cellular instructions)\b/i.test(text)) {
+    return {
+      type: "flow",
+      title: "From mRNA to Protein",
+      nodes: [
+        { label: "mRNA", icon: "rna", color: "gold" },
+        { label: "CELL MACHINERY", icon: "gear", color: "teal" },
+        { label: "PROTEIN", icon: "protein", color: "purple" },
+      ],
+      footnote: "Some vaccines deliver instructions for making a target protein",
+    };
+  }
+
+  if (/\b(immune system|immune cells?|defen[cs]e|respond|response|white blood cells?)\b/i.test(text)) {
+    return {
+      type: "flow",
+      title: "The Immune Response",
+      nodes: [
+        { label: "POTENTIAL THREAT", icon: "virus", color: "red" },
+        { label: "IMMUNE SYSTEM", icon: "immune", color: "teal" },
+        { label: "BODY'S RESPONSE", icon: "shield", color: "gold" },
+      ],
+    };
+  }
+
+  if (/\b(vaccin\w*|injection|dose|immuni[sz]ation)\b/i.test(text)) {
+    return {
+      type: "flow",
+      title: "Introducing a Vaccine",
+      nodes: [
+        { label: "VACCINE", icon: "syringe", color: "gold" },
+        { label: "IMMUNE SYSTEM", icon: "immune", color: "teal" },
+        { label: "PREPARED RESPONSE", icon: "shield", color: "purple" },
+      ],
+      footnote: "Vaccines help train the immune system to recognize a target",
+    };
+  }
+
+  return {
+    type: "flow",
+    title: "Preparing Immune Defenses",
+    nodes: [
+      { label: "POTENTIAL THREAT", icon: "virus", color: "red" },
+      { label: "IMMUNE DEFENSE", icon: "immune", color: "teal" },
+      { label: "PROTECTION", icon: "shield", color: "gold" },
+    ],
+  };
+};
+
 const resolveSpec = (scene: ExplainerScene, topic: string): VisualSpec => {
   if (scene.visual) return scene.visual;
+
+  const sceneText = `${scene.narration} ${scene.visualDescription || ""}`;
+  const isSolar = /\b(solar|photovoltaic|photovoltaics|sunlight)\b/i.test(
+    `${topic} ${sceneText}`,
+  );
+
+  if (isSolar) return solarSpecForScene(scene);
+
+  const vaccineTopic = /\b(vaccin\w*|immuni[sz]ation)\b/i.test(
+    `${topic} ${sceneText}`,
+  );
+  if (vaccineTopic) return vaccineSpecForScene(scene);
+
   const preset = PRESETS.find((p) => p.match.test(topic));
   if (preset) return preset.specs[(scene.sceneNumber - 1) % preset.specs.length];
+
   return fallbackSpec(scene);
 };
 

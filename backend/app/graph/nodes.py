@@ -556,12 +556,11 @@ def scriptwriter_node(state: VideoState) -> dict:
 
     normalized_topic = topic.lower()
 
-    # Use the specialized solar fallback only when basic evidence exists.
+    # Build a solar explanation from details explicitly present in research.
     if any(
         term in normalized_topic
         for term in ("solar panel", "solar panels", "photovoltaic")
     ):
-        # Use summaries, not titles, as evidence for technical claims.
         source_text = " ".join(
             source.get("summary", "")
             for source in sources
@@ -572,9 +571,9 @@ def scriptwriter_node(state: VideoState) -> dict:
             for term in ("sunlight", "electricity", "solar cell")
         ):
             parts = [
-                "Imagine turning sunlight into electricity. "
+                "Imagine turning sunlight into electricity.",
                 "Solar panels use solar cells to convert light energy "
-                "into electrical energy."
+                "into electrical energy.",
             ]
 
             if "semiconductor" in source_text:
@@ -589,7 +588,10 @@ def scriptwriter_node(state: VideoState) -> dict:
                     "the photovoltaic effect."
                 )
 
-            if "direct current" in source_text or " dc " in f" {source_text} ":
+            if (
+                "direct current" in source_text
+                or " dc " in f" {source_text} "
+            ):
                 parts.append(
                     "Solar cells can produce direct current, also "
                     "called DC electricity."
@@ -604,7 +606,10 @@ def scriptwriter_node(state: VideoState) -> dict:
             ):
                 parts.append(
                     "An inverter can convert direct current into "
-                    "alternating current for compatible electrical systems."
+                    "alternating current for compatible electrical systems. "
+                    "This conversion is useful when equipment requires "
+                    "alternating current rather than the direct current "
+                    "produced by the solar cells."
                 )
 
             if "temperature" in source_text:
@@ -613,11 +618,32 @@ def scriptwriter_node(state: VideoState) -> dict:
                     "solar-panel performance."
                 )
 
-            parts.append(
-                "Understanding these components helps explain how "
-                "solar technology can turn available sunlight into "
-                "useful electrical power."
-            )
+            if "battery" in source_text or "batteries" in source_text:
+                parts.append(
+                    "Electricity produced by solar cells can also be "
+                    "stored in batteries when the system includes storage."
+                )
+
+            if (
+                "solar lamp" in source_text
+                and "charge controller" in source_text
+            ):
+                parts.append(
+                    "A solar lighting system can include a panel, "
+                    "a battery, a charge controller, and an LED lamp."
+                )
+
+            if "excited electrons" in source_text:
+                parts.append(
+                    "Photovoltaic cells contain materials that produce "
+                    "excited electrons when exposed to light."
+                )
+
+            if "flow through a circuit" in source_text:
+                parts.append(
+                    "These electrons flow through a circuit and produce "
+                    "direct current electricity."
+                )
 
             return {"script": " ".join(parts)}
 

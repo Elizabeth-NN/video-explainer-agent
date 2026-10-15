@@ -121,6 +121,7 @@ def main():
                     scenes=scenes,
                     output_dir=args.output_dir,
                     voice=args.voice,
+                    topic=result["topic"],
                 )
             )
             print(f"Audio directory: {args.output_dir}")
