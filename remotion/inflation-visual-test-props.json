@@ -1,0 +1,32 @@
+{
+  "topic": "Inflation",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Inflation increases the general price level across an economy.",
+      "visualDescription": "A simple diagram showing inflation increasing the general price level.",
+      "audioFile": "audio/scene_001.mp3",
+      "durationInFrames": 108,
+      "from": 0,
+      "visual": {
+        "type": "flow",
+        "title": "How Inflation Works",
+        "nodes": [
+          {
+            "label": "INFLATION",
+            "icon": "dot",
+            "color": "teal"
+          },
+          {
+            "label": "GENERAL PRICE LEVEL",
+            "icon": "check",
+            "color": "gold"
+          }
+        ]
+      }
+    }
+  ]
+}

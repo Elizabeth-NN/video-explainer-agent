@@ -1,4 +1,4 @@
-from typing import Literal, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict
 
 
 class ResearchSource(TypedDict):
@@ -12,6 +12,7 @@ class Scene(TypedDict):
     narration: str
     visual_description: str
     duration_seconds: int
+    visual: NotRequired[dict[str, Any]]
 
 
 class VideoState(TypedDict):

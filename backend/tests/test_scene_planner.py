@@ -137,6 +137,46 @@ def test_general_scene_description_does_not_assume_a_specific_subject():
     assert "vaccine" not in description
 
 
+def test_generic_visual_plan_uses_explicit_inflation_relationship():
+    scene = scene_planner_node(
+        {
+            "topic": "Inflation",
+            "script": "Inflation increases the general price level.",
+            "approved": True,
+        }
+    )["scenes"][0]
+
+    assert scene["visual"]["type"] == "flow"
+    labels = [node["label"] for node in scene["visual"]["nodes"]]
+    assert labels == ["INFLATION", "GENERAL PRICE LEVEL"]
+
+
+def test_generic_visual_plan_handles_water_cycle_relationship():
+    scene = scene_planner_node(
+        {
+            "topic": "How rain forms",
+            "script": "Water vapor cools and forms tiny droplets.",
+            "approved": True,
+        }
+    )["scenes"][0]
+
+    assert scene["visual"]["type"] == "flow"
+    labels = [node["label"] for node in scene["visual"]["nodes"]]
+    assert labels == ["WATER VAPOR", "TINY DROPLETS"]
+
+
+def test_generic_visual_plan_does_not_invent_a_relationship():
+    scene = scene_planner_node(
+        {
+            "topic": "A broad introduction",
+            "script": "This topic has several important parts.",
+            "approved": True,
+        }
+    )["scenes"][0]
+
+    assert "visual" not in scene
+
+
 def test_heart_scene_visual_descriptions_follow_blood_flow_narration():
     result = scene_planner_node(
         {

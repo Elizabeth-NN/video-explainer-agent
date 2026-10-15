@@ -176,6 +176,82 @@ def _visual_description(topic: str, narration: str) -> str:
     )
 
 
+
+def _visual_label(text: str) -> str:
+    """Create a short display label from words actually present in narration."""
+    text = re.sub(r"^[\s,;:]+|[\s,;:]+$", "", text)
+    text = re.sub(r"^(?:the|a|an|this|that)\s+", "", text, flags=re.IGNORECASE)
+    words = re.findall(r"[A-Za-z0-9'-]+", text)
+    return " ".join(words[:3]).upper()
+
+
+def _structured_visual(narration: str) -> dict | None:
+    """Build a flow diagram only for an explicitly expressed relationship.
+
+    This deliberately conservative first version does not guess a connection
+    when it cannot identify a supported subject and outcome.
+    """
+    patterns = [
+        # Specific pattern first so "Water vapor cools and forms tiny droplets"
+        # captures "Water vapor" as the subject, not "Water vapor cools and".
+        (
+            r"(?P<left>[^.!?;]{2,55}?)\s+"
+            r"(?:cools|heats|evaporates|condenses)\s+and\s+"
+            r"(?:forms|creates|produces)\s+"
+            r"(?P<right>[^.!?;]{2,55})"
+        ),
+        # General cause, process, or outcome relationships.
+        (
+            r"(?P<left>[^.!?;]{2,55}?)\s+"
+            r"(?P<verb>causes|leads to|produces|forms|creates|"
+            r"increases|reduces|raises|lowers|converts?)\s+"
+            r"(?P<right>[^.!?;]{2,55})"
+        ),
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, narration, re.IGNORECASE)
+        if not match:
+            continue
+
+        left_text = match.group("left")
+        if re.search(
+            r"\\b(?:cools|heats|evaporates|condenses)$",
+            left_text,
+            re.IGNORECASE,
+        ):
+            left_text = re.sub(
+                r"\\s+\\b(?:cools|heats|evaporates|condenses)$",
+                "",
+                left_text,
+                flags=re.IGNORECASE,
+            )
+
+        left = _visual_label(left_text)
+        right = _visual_label(match.group("right"))
+
+        # Avoid generic pronouns and labels too short to be useful.
+        if (
+            len(left) < 2
+            or len(right) < 2
+            or left.lower() in {"this", "that", "it", "they", "we"}
+            or right.lower() in {"this", "that", "it", "they", "we"}
+            or left == right
+        ):
+            continue
+
+        return {
+            "type": "flow",
+            "title": "How the Ideas Connect",
+            "nodes": [
+                {"label": left, "icon": "dot", "color": "teal"},
+                {"label": right, "icon": "check", "color": "gold"},
+            ],
+        }
+
+    return None
+
+
 def scene_planner_node(state: VideoState) -> dict:
     """Create a deterministic scene plan from an approved script."""
     if not state.get("approved", False):
@@ -194,13 +270,17 @@ def scene_planner_node(state: VideoState) -> dict:
         word_count = len(narration.split())
         duration = max(2, round(word_count / WORDS_PER_MINUTE * 60))
 
-        scenes.append(
-            {
-                "scene_number": number,
-                "narration": narration,
-                "visual_description": _visual_description(topic, narration),
-                "duration_seconds": duration,
-            }
-        )
+        scene = {
+            "scene_number": number,
+            "narration": narration,
+            "visual_description": _visual_description(topic, narration),
+            "duration_seconds": duration,
+        }
+
+        visual = _structured_visual(narration)
+        if visual is not None:
+            scene["visual"] = visual
+
+        scenes.append(scene)
 
     return {"scenes": scenes}

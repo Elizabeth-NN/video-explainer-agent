@@ -87,6 +87,7 @@ async def generate_narration(
                 "scene_number": scene_number,
                 "narration": narration,
                 "visual_description": scene["visual_description"],
+                **({"visual": scene["visual"]} if scene.get("visual") else {}),
                 "estimated_duration_seconds": scene["duration_seconds"],
                 "audio_duration_seconds": actual_duration,
                 "audio_file": filename,

@@ -78,6 +78,9 @@ for (const [index, scene] of manifest.scenes.entries()) {
     sceneNumber,
     narration: scene.narration,
     visualDescription: String(scene.visual_description || ""),
+    ...(scene.visual && typeof scene.visual === "object"
+      ? { visual: scene.visual }
+      : {}),
     audioFile: `audio/${audioFile}`,
     durationInFrames,
     from: startFrame,

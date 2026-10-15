@@ -19,7 +19,7 @@ export type ColorName = "teal" | "gold" | "red" | "purple" | "white";
 export type IconName =
   | "sun" | "panel" | "cell" | "bolt" | "inverter" | "house"
   | "syringe" | "virus" | "immune" | "shield" | "antibody"
-  | "rna" | "protein" | "gear" | "link" | "check" | "dot";
+  | "rna" | "protein" | "gear" | "link" | "check" | "dot" | "heart";
 
 export type NodeSpec = { label: string; icon: IconName; color?: ColorName };
 
@@ -131,6 +131,15 @@ type IconProps = { c: string; t: number };
 const spokes = (n: number) => Array.from({ length: n }, (_, i) => (i * 360) / n);
 
 const ICONS: Record<IconName, React.FC<IconProps>> = {
+  heart: ({ c }) => (
+    <path
+      d="M0 31 C-8 23 -34 5 -34 -12 C-34 -29 -12 -34 0 -17 C12 -34 34 -29 34 -12 C34 5 8 23 0 31 Z"
+      fill={c}
+      stroke={c}
+      strokeWidth="2"
+    />
+  ),
+
   sun: ({ c, t }) => (
     <g>
       <circle r="17" fill={c} />
@@ -853,7 +862,93 @@ const vaccineSpecForScene = (scene: ExplainerScene): VisualSpec => {
   };
 };
 
+
+const heartSpecForScene = (scene: ExplainerScene): VisualSpec => {
+  const text = `${scene.narration} ${scene.visualDescription || ""}`;
+
+  if (/venae cavae|returning from the body|enters the right side/i.test(text)) {
+    return {
+      type: "flow",
+      title: "Returning Blood Enters the Heart",
+      nodes: [
+        { label: "BODY", icon: "dot", color: "gold" },
+        { label: "VENAE CAVAE", icon: "gear", color: "teal" },
+        { label: "RIGHT HEART", icon: "heart", color: "red" },
+      ],
+      footnote: "Blood returning from the body enters the right side",
+    };
+  }
+
+  if (/pulmonary artery|right side.*lungs|blood to the lungs/i.test(text)) {
+    return {
+      type: "flow",
+      title: "From the Heart to the Lungs",
+      nodes: [
+        { label: "RIGHT HEART", icon: "heart", color: "red" },
+        { label: "PULMONARY ARTERY", icon: "dot", color: "red" },
+        { label: "LUNGS", icon: "immune", color: "teal" },
+      ],
+      footnote: "The pulmonary artery carries blood toward the lungs",
+    };
+  }
+
+  if (/left side|returning from the lungs|receives blood/i.test(text)) {
+    return {
+      type: "flow",
+      title: "Blood Returns from the Lungs",
+      nodes: [
+        { label: "LUNGS", icon: "dot", color: "teal" },
+        { label: "LEFT HEART", icon: "heart", color: "red" },
+      ],
+      footnote: "The left side receives blood returning from the lungs",
+    };
+  }
+
+  if (/four chambers|four valves|muscular organ|anatomy/i.test(text)) {
+    return {
+      type: "hub",
+      title: "Four Chambers and Four Valves",
+      center: { label: "THE HEART", icon: "heart", color: "red" },
+      direction: "in",
+      satellites: [
+        { label: "FOUR CHAMBERS", icon: "cell", color: "teal" },
+        { label: "FOUR VALVES", icon: "gear", color: "gold" },
+        { label: "BLOOD FLOW", icon: "dot", color: "purple" },
+      ],
+      footnote: "The valves help blood move through the heart",
+    };
+  }
+
+  if (/blood vessels|around the body|tissues|oxygen|nutrients|carbon dioxide/i.test(text)) {
+    return {
+      type: "flow",
+      title: "Blood Circulates Around the Body",
+      nodes: [
+        { label: "HEART", icon: "heart", color: "red" },
+        { label: "BLOOD VESSELS", icon: "dot", color: "teal" },
+        { label: "BODY TISSUES", icon: "cell", color: "gold" },
+      ],
+      footnote: "Blood transports oxygen and nutrients to body tissues",
+    };
+  }
+
+  return {
+    type: "hub",
+    title: "The Heart and Circulation",
+    center: { label: "THE HEART", icon: "heart", color: "red" },
+    direction: "out",
+    satellites: [
+      { label: "BODY", icon: "dot", color: "gold" },
+      { label: "LUNGS", icon: "immune", color: "teal" },
+      { label: "BLOOD FLOW", icon: "gear", color: "purple" },
+    ],
+    footnote: "The heart pumps blood through the circulatory system",
+  };
+};
+
 const resolveSpec = (scene: ExplainerScene, topic: string): VisualSpec => {
+  // Prefer an explicit, narration-derived visual from the backend.
+  // Topic-specific visuals remain fallbacks when no visual was generated.
   if (scene.visual) return scene.visual;
 
   const sceneText = `${scene.narration} ${scene.visualDescription || ""}`;
@@ -862,6 +957,9 @@ const resolveSpec = (scene: ExplainerScene, topic: string): VisualSpec => {
   );
 
   if (isSolar) return solarSpecForScene(scene);
+
+  const heartTopic = /\b(heart|cardiac)\b/i.test(topic);
+  if (heartTopic) return heartSpecForScene(scene);
 
   const vaccineTopic = /\b(vaccin\w*|immuni[sz]ation)\b/i.test(
     `${topic} ${sceneText}`,
