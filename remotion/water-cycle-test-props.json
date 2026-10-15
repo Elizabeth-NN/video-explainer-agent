@@ -1,0 +1,161 @@
+{
+  "topic": "The Water Cycle",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Imagine following a drop of water on a journey through the water cycle.",
+      "visualDescription": "Educational water-cycle illustration focused on the movement of water through the water cycle, using clear labels and simple process elements.",
+      "audioFile": "water-cycle-validation/audio/scene_001.mp3",
+      "durationInFrames": 107,
+      "from": 0
+    },
+    {
+      "sceneNumber": 2,
+      "narration": "Energy from the Sun warms water at Earth's surface, allowing some of it to evaporate and enter the atmosphere as water vapour.",
+      "visualDescription": "Educational water-cycle illustration focused on sunlight driving evaporation from surface water, using clear labels and simple process elements.",
+      "visual": {
+        "type": "scene-graph",
+        "title": "How the Water Cycle Works",
+        "nodes": [
+          {
+            "id": "source",
+            "label": "WATER",
+            "x": 300,
+            "y": 175,
+            "size": 38,
+            "color": "#4FD1C5",
+            "appearAt": 0.2
+          },
+          {
+            "id": "outcome",
+            "label": "WATER VAPOUR",
+            "x": 700,
+            "y": 175,
+            "size": 38,
+            "color": "#F2B84B",
+            "appearAt": 0.45
+          }
+        ],
+        "links": [
+          {
+            "from": "source",
+            "to": "outcome",
+            "label": "EVAPORATES INTO",
+            "color": "#4FD1C5",
+            "style": "solid",
+            "appearAt": 0.4
+          }
+        ],
+        "footnote": "Relationship identified from the narration"
+      },
+      "audioFile": "water-cycle-validation/audio/scene_002.mp3",
+      "durationInFrames": 181,
+      "from": 107
+    },
+    {
+      "sceneNumber": 3,
+      "narration": "As the vapour cools, it can condense into tiny water droplets that form clouds.",
+      "visualDescription": "Educational water-cycle illustration focused on water vapour cooling and condensing into clouds, using clear labels and simple process elements.",
+      "visual": {
+        "type": "scene-graph",
+        "title": "How the Water Cycle Works",
+        "nodes": [
+          {
+            "id": "source",
+            "label": "VAPOUR",
+            "x": 300,
+            "y": 175,
+            "size": 38,
+            "color": "#4FD1C5",
+            "appearAt": 0.2
+          },
+          {
+            "id": "outcome",
+            "label": "TINY WATER DROPLETS",
+            "x": 700,
+            "y": 175,
+            "size": 38,
+            "color": "#F2B84B",
+            "appearAt": 0.45
+          }
+        ],
+        "links": [
+          {
+            "from": "source",
+            "to": "outcome",
+            "label": "CONDENSES INTO",
+            "color": "#4FD1C5",
+            "style": "solid",
+            "appearAt": 0.4
+          }
+        ],
+        "footnote": "Relationship identified from the narration"
+      },
+      "audioFile": "water-cycle-validation/audio/scene_003.mp3",
+      "durationInFrames": 134,
+      "from": 288
+    },
+    {
+      "sceneNumber": 4,
+      "narration": "When water droplets or ice particles grow large enough, water can fall back to Earth's surface as precipitation, such as rain or snow.",
+      "visualDescription": "Educational water-cycle illustration focused on water vapour cooling and condensing into clouds, using clear labels and simple process elements.",
+      "visual": {
+        "type": "scene-graph",
+        "title": "How the Water Cycle Works",
+        "nodes": [
+          {
+            "id": "source",
+            "label": "WATER",
+            "x": 300,
+            "y": 175,
+            "size": 38,
+            "color": "#4FD1C5",
+            "appearAt": 0.2
+          },
+          {
+            "id": "outcome",
+            "label": "PRECIPITATION",
+            "x": 700,
+            "y": 175,
+            "size": 38,
+            "color": "#F2B84B",
+            "appearAt": 0.45
+          }
+        ],
+        "links": [
+          {
+            "from": "source",
+            "to": "outcome",
+            "label": "FALLS AS",
+            "color": "#4FD1C5",
+            "style": "solid",
+            "appearAt": 0.4
+          }
+        ],
+        "footnote": "Relationship identified from the narration"
+      },
+      "audioFile": "water-cycle-validation/audio/scene_004.mp3",
+      "durationInFrames": 203,
+      "from": 422
+    },
+    {
+      "sceneNumber": 5,
+      "narration": "Water can then collect in rivers, lakes, and other reservoirs, or move across the land, before continuing through the cycle.",
+      "visualDescription": "Educational water-cycle illustration focused on the movement of water through the water cycle, using clear labels and simple process elements.",
+      "audioFile": "water-cycle-validation/audio/scene_005.mp3",
+      "durationInFrames": 197,
+      "from": 625
+    },
+    {
+      "sceneNumber": 6,
+      "narration": "The cycle moves water between Earth's surface and the atmosphere, and its stages can happen in different places and over different timescales.",
+      "visualDescription": "Educational water-cycle illustration focused on the movement of water through the water cycle, using clear labels and simple process elements.",
+      "audioFile": "water-cycle-validation/audio/scene_006.mp3",
+      "durationInFrames": 200,
+      "from": 822
+    }
+  ]
+}

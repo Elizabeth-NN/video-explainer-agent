@@ -8,8 +8,8 @@
       "sceneNumber": 1,
       "narration": "Sunlight drives evaporation. Water vapour cools and condenses into clouds, then falls as precipitation.",
       "visualDescription": "The stages of the water cycle.",
-      "audioFile": "audio/scene_001.mp3",
-      "durationInFrames": 108,
+      "audioFile": "scene-graph-test-audio/scene_001.mp3",
+      "durationInFrames": 224,
       "from": 0,
       "visual": {
         "type": "scene-graph",

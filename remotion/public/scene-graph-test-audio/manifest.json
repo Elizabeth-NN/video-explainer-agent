@@ -1,0 +1,17 @@
+{
+  "topic": "The Water Cycle",
+  "voice": "en-US-JennyNeural",
+  "scene_count": 1,
+  "total_audio_duration_seconds": 7.82,
+  "combined_audio_file": "narration.mp3",
+  "scenes": [
+    {
+      "scene_number": 1,
+      "narration": "Sunlight drives evaporation. Water vapour cools and condenses into clouds, then falls as precipitation.",
+      "visual_description": "A scene graph illustrating the water cycle.",
+      "estimated_duration_seconds": 8,
+      "audio_duration_seconds": 7.82,
+      "audio_file": "scene_001.mp3"
+    }
+  ]
+}

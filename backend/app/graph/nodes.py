@@ -270,6 +270,12 @@ def expand_research_queries(topic: str) -> list[str]:
             "Photovoltaics",
             "Solar panel",
         ],
+        "water cycle": [
+            "Water cycle",
+            "Evaporation",
+            "Condensation",
+            "Precipitation",
+        ],
         "solar power": [
             "Solar energy",
             "Solar power",
@@ -581,6 +587,48 @@ def scriptwriter_node(state: VideoState) -> dict:
         )
 
     normalized_topic = topic.lower()
+
+    # Explain the water cycle when research supports its main stages.
+    if "water cycle" in normalized_topic:
+        source_text = " ".join(
+            str(source.get("summary", ""))
+            for source in sources
+        ).lower()
+
+        has_water_cycle_evidence = (
+            ("water cycle" in source_text or "hydrologic cycle" in source_text)
+            and "evaporation" in source_text
+            and "condensation" in source_text
+            and "precipitation" in source_text
+        )
+
+        if has_water_cycle_evidence:
+            parts = [
+                "Imagine following a drop of water on a journey through "
+                "the water cycle.",
+                "Energy from the Sun warms water at Earth's surface, "
+                "allowing some of it to evaporate and enter the atmosphere "
+                "as water vapour.",
+                "As the vapour cools, it can condense into tiny water "
+                "droplets that form clouds.",
+                "When water droplets or ice particles grow large enough, "
+                "water can fall back to Earth's surface as precipitation, "
+                "such as rain or snow.",
+                "Water can then collect in rivers, lakes, and other "
+                "reservoirs, or move across the land, before continuing "
+                "through the cycle.",
+                "The cycle moves water between Earth's surface and the "
+                "atmosphere, and its stages can happen in different places "
+                "and over different timescales.",
+            ]
+
+            if "runoff" not in source_text:
+                parts[4] = (
+                    "Water can collect in rivers, lakes, and other "
+                    "reservoirs before continuing through the cycle."
+                )
+
+            return {"script": " ".join(parts)}
 
     # Build a solar explanation from details explicitly present in research.
     if any(

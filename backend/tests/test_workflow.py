@@ -646,6 +646,49 @@ def test_generic_fallback_avoids_research_process_disclaimers():
     assert "should be consulted before publication" not in script
 
 
+
+def test_water_cycle_fallback_explains_the_main_stages():
+    from app.graph.nodes import scriptwriter_node
+
+    state = initial_state(topic="The Water Cycle")
+    state["research_sources"] = [
+        {
+            "title": "Water cycle",
+            "url": "https://example.com/water-cycle",
+            "summary": (
+                "The water cycle, also called the hydrologic cycle, "
+                "moves water between Earth's surface and atmosphere. "
+                "Evaporation moves water into the atmosphere. "
+                "Condensation forms clouds as water vapour cools. "
+                "Precipitation returns water to Earth's surface."
+            ),
+        }
+    ]
+
+    script = scriptwriter_node(state)["script"]
+    lower = script.lower()
+
+    assert script.startswith("Imagine")
+    assert 80 <= len(script.split()) <= 180
+    assert "evaporate" in lower
+    assert "condense" in lower
+    assert "precipitation" in lower
+    assert "clouds" in lower
+    assert "the research describes this idea" not in lower
+
+
+def test_water_cycle_research_queries_include_main_stages():
+    from app.graph.nodes import expand_research_queries
+
+    queries = expand_research_queries("The Water Cycle")
+    normalized = {query.casefold() for query in queries}
+
+    assert "water cycle" in normalized
+    assert "evaporation" in normalized
+    assert "condensation" in normalized
+    assert "precipitation" in normalized
+
+
 def test_revision_rebuilds_script_from_research():
     state = initial_state(topic="How vaccines work")
     state["script"] = (

@@ -146,9 +146,15 @@ def test_generic_visual_plan_uses_explicit_inflation_relationship():
         }
     )["scenes"][0]
 
-    assert scene["visual"]["type"] == "flow"
-    labels = [node["label"] for node in scene["visual"]["nodes"]]
+    assert scene["visual"]["type"] == "scene-graph"
+    nodes = scene["visual"]["nodes"]
+    labels = [node["label"] for node in nodes]
     assert labels == ["INFLATION", "GENERAL PRICE LEVEL"]
+    assert [node["id"] for node in nodes] == ["source", "outcome"]
+    assert nodes[0]["x"] < nodes[1]["x"]
+    assert scene["visual"]["links"][0]["from"] == "source"
+    assert scene["visual"]["links"][0]["to"] == "outcome"
+    assert scene["visual"]["links"][0]["label"] == "INCREASES"
 
 
 def test_generic_visual_plan_handles_water_cycle_relationship():
@@ -160,9 +166,68 @@ def test_generic_visual_plan_handles_water_cycle_relationship():
         }
     )["scenes"][0]
 
-    assert scene["visual"]["type"] == "flow"
-    labels = [node["label"] for node in scene["visual"]["nodes"]]
+    assert scene["visual"]["type"] == "scene-graph"
+    nodes = scene["visual"]["nodes"]
+    labels = [node["label"] for node in nodes]
     assert labels == ["WATER VAPOR", "TINY DROPLETS"]
+    assert scene["visual"]["links"][0]["label"] == "FORMS"
+    assert all("x" in node and "y" in node for node in nodes)
+
+
+
+def test_water_cycle_evaporation_wording_creates_scene_graph():
+    scene = scene_planner_node(
+        {
+            "topic": "The Water Cycle",
+            "script": (
+                "Energy from the Sun warms water at Earth's surface, "
+                "allowing some of it to evaporate and enter the atmosphere "
+                "as water vapour."
+            ),
+            "approved": True,
+        }
+    )["scenes"][0]
+
+    assert scene["visual"]["type"] == "scene-graph"
+    labels = [node["label"] for node in scene["visual"]["nodes"]]
+    assert labels == ["WATER", "WATER VAPOUR"]
+    assert scene["visual"]["links"][0]["label"] == "EVAPORATES INTO"
+
+
+def test_water_cycle_precipitation_wording_creates_scene_graph():
+    scene = scene_planner_node(
+        {
+            "topic": "The Water Cycle",
+            "script": (
+                "Water can fall back to Earth's surface as precipitation, "
+                "such as rain or snow."
+            ),
+            "approved": True,
+        }
+    )["scenes"][0]
+
+    assert scene["visual"]["type"] == "scene-graph"
+    labels = [node["label"] for node in scene["visual"]["nodes"]]
+    assert labels == ["WATER", "PRECIPITATION"]
+    assert scene["visual"]["links"][0]["label"] == "FALLS AS"
+
+
+def test_water_cycle_condensation_wording_creates_scene_graph():
+    scene = scene_planner_node(
+        {
+            "topic": "The Water Cycle",
+            "script": (
+                "As the vapour cools, it can condense into tiny water "
+                "droplets that form clouds."
+            ),
+            "approved": True,
+        }
+    )["scenes"][0]
+
+    assert scene["visual"]["type"] == "scene-graph"
+    labels = [node["label"] for node in scene["visual"]["nodes"]]
+    assert labels == ["VAPOUR", "TINY WATER DROPLETS"]
+    assert scene["visual"]["links"][0]["label"] == "CONDENSES INTO"
 
 
 def test_generic_visual_plan_does_not_invent_a_relationship():
@@ -202,3 +267,72 @@ def test_heart_scene_visual_descriptions_follow_blood_flow_narration():
     assert "blood returning from the lungs and entering the left side" in descriptions[2]
     assert all("scene narration:" in item for item in descriptions)
     assert all("illustrate the specific idea in this scene" not in item for item in descriptions)
+
+def test_water_cycle_sunlight_does_not_trigger_solar_description():
+    scene = scene_planner_node(
+        {
+            "topic": "The Water Cycle",
+            "script": "Sunlight drives evaporation.",
+            "approved": True,
+        }
+    )["scenes"][0]
+
+    description = scene["visual_description"].lower()
+    assert "water-cycle" in description
+    assert "evaporation" in description
+    assert "solar panel" not in description
+
+
+def test_water_cycle_condensation_creates_scene_graph():
+    scene = scene_planner_node(
+        {
+            "topic": "The Water Cycle",
+            "script": (
+                "Water vapour cools and condenses into clouds, "
+                "then falls as precipitation."
+            ),
+            "approved": True,
+        }
+    )["scenes"][0]
+
+    assert scene["visual"]["type"] == "scene-graph"
+    nodes = scene["visual"]["nodes"]
+    assert [node["label"] for node in nodes] == ["WATER VAPOUR", "CLOUDS"]
+    assert scene["visual"]["links"][0]["label"] == "CONDENSES INTO"
+    assert "water-cycle" in scene["visual_description"].lower()
+
+
+def test_water_cycle_evaporation_creates_scene_graph():
+    scene = scene_planner_node(
+        {
+            "topic": "The Water Cycle",
+            "script": "Sunlight heats water, causing evaporation.",
+            "approved": True,
+        }
+    )["scenes"][0]
+
+    assert scene["visual"]["type"] == "scene-graph"
+    nodes = scene["visual"]["nodes"]
+    assert [node["label"] for node in nodes] == [
+        "SUNLIGHT HEATS WATER",
+        "EVAPORATION",
+    ]
+    assert scene["visual"]["links"][0]["label"] == "CAUSES"
+
+
+def test_water_cycle_clouds_releasing_precipitation_creates_scene_graph():
+    scene = scene_planner_node(
+        {
+            "topic": "The Water Cycle",
+            "script": "Clouds release precipitation, and water returns to rivers.",
+            "approved": True,
+        }
+    )["scenes"][0]
+
+    assert scene["visual"]["type"] == "scene-graph"
+    nodes = scene["visual"]["nodes"]
+    assert [node["label"] for node in nodes] == [
+        "CLOUDS",
+        "PRECIPITATION",
+    ]
+    assert scene["visual"]["links"][0]["label"] == "RELEASE"

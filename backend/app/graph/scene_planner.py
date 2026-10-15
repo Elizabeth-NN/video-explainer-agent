@@ -28,6 +28,27 @@ def _split_script(script: str) -> list[str]:
 def _visual_description(topic: str, narration: str) -> str:
     """Describe a scene using its topic and actual narration."""
     text = f"{topic} {narration}".lower()
+    topic_text = topic.lower()
+
+    # Handle water-cycle topics before keyword branches such as solar.
+    if "water cycle" in topic_text:
+        narration_lower = narration.lower()
+
+        if "evaporation" in narration_lower or "evaporate" in narration_lower:
+            focus = "sunlight driving evaporation from surface water"
+        elif any(term in narration_lower for term in (
+            "condens", "cloud", "droplet",
+        )):
+            focus = "water vapour cooling and condensing into clouds"
+        elif "precipitation" in narration_lower or "rain" in narration_lower:
+            focus = "water returning to the surface as precipitation"
+        else:
+            focus = "the movement of water through the water cycle"
+
+        return (
+            "Educational water-cycle illustration focused on "
+            f"{focus}, using clear labels and simple process elements."
+        )
 
     # Heart circulation: describe the relationship narrated in this scene.
     if re.search(r"\bheart\b|\bcardiac\b", text):
@@ -185,22 +206,107 @@ def _visual_label(text: str) -> str:
     return " ".join(words[:3]).upper()
 
 
-def _structured_visual(narration: str) -> dict | None:
-    """Build a flow diagram only for an explicitly expressed relationship.
 
-    This deliberately conservative first version does not guess a connection
-    when it cannot identify a supported subject and outcome.
-    """
+def _water_cycle_visual(narration: str) -> dict | None:
+    """Recognize a few explicit water-cycle relationships."""
     patterns = [
-        # Specific pattern first so "Water vapor cools and forms tiny droplets"
-        # captures "Water vapor" as the subject, not "Water vapor cools and".
+        (
+            r"\bwater\b.*?\ballowing\s+some\s+of\s+it\s+"
+            r"to\s+evaporate\b.*?\bas\s+water\s+vapou?r\b",
+            "WATER",
+            "WATER VAPOUR",
+            "EVAPORATES INTO",
+        ),
+        (
+            r"\bwater\b.*?\bfall\s+back\b.*?\bas\s+precipitation\b",
+            "WATER",
+            "PRECIPITATION",
+            "FALLS AS",
+        ),
+        (
+            r"\bvapou?r\b.*?\bcondense\s+into\s+tiny\s+water\s+"
+            r"droplets\b",
+            "VAPOUR",
+            "TINY WATER DROPLETS",
+            "CONDENSES INTO",
+        ),
+    ]
+
+    for pattern, left, right, relationship in patterns:
+        if not re.search(pattern, narration, re.IGNORECASE):
+            continue
+
+        return {
+            "type": "scene-graph",
+            "title": "How the Water Cycle Works",
+            "nodes": [
+                {
+                    "id": "source",
+                    "label": left,
+                    "x": 300,
+                    "y": 175,
+                    "size": 38,
+                    "color": "#4FD1C5",
+                    "appearAt": 0.2,
+                },
+                {
+                    "id": "outcome",
+                    "label": right,
+                    "x": 700,
+                    "y": 175,
+                    "size": 38,
+                    "color": "#F2B84B",
+                    "appearAt": 0.45,
+                },
+            ],
+            "links": [
+                {
+                    "from": "source",
+                    "to": "outcome",
+                    "label": relationship,
+                    "color": "#4FD1C5",
+                    "style": "solid",
+                    "appearAt": 0.4,
+                }
+            ],
+            "footnote": "Relationship identified from the narration",
+        }
+
+    return None
+
+
+def _structured_visual(narration: str) -> dict | None:
+    """Build a positioned scene graph from an explicit narration relationship.
+
+    The planner stays conservative: it creates a graph only when the narration
+    provides a recognizable subject and outcome.
+    """
+    water_cycle_visual = _water_cycle_visual(narration)
+    if water_cycle_visual:
+        return water_cycle_visual
+
+    patterns = [
+        (
+            r"(?P<left>[^.!?;]{2,55}?),?\s+"
+            r"(?P<verb>causing)\s+"
+            r"(?P<right>[^.!?;,]{2,55})"
+        ),
+        (
+            r"(?P<left>[^.!?;]{2,55}?)\s+"
+            r"(?P<verb>releases?)\s+"
+            r"(?P<right>[^.!?;,]{2,55})"
+        ),
+        (
+            r"(?P<left>[^.!?;]{2,55}?)\s+cools\s+and\s+"
+            r"(?P<action>condenses\s+into)\s+"
+            r"(?P<right>[^.!?;,]{2,55})"
+        ),
         (
             r"(?P<left>[^.!?;]{2,55}?)\s+"
             r"(?:cools|heats|evaporates|condenses)\s+and\s+"
-            r"(?:forms|creates|produces)\s+"
+            r"(?P<action>forms|creates|produces)\s+"
             r"(?P<right>[^.!?;]{2,55})"
         ),
-        # General cause, process, or outcome relationships.
         (
             r"(?P<left>[^.!?;]{2,55}?)\s+"
             r"(?P<verb>causes|leads to|produces|forms|creates|"
@@ -214,20 +320,7 @@ def _structured_visual(narration: str) -> dict | None:
         if not match:
             continue
 
-        left_text = match.group("left")
-        if re.search(
-            r"\\b(?:cools|heats|evaporates|condenses)$",
-            left_text,
-            re.IGNORECASE,
-        ):
-            left_text = re.sub(
-                r"\\s+\\b(?:cools|heats|evaporates|condenses)$",
-                "",
-                left_text,
-                flags=re.IGNORECASE,
-            )
-
-        left = _visual_label(left_text)
+        left = _visual_label(match.group("left"))
         right = _visual_label(match.group("right"))
 
         # Avoid generic pronouns and labels too short to be useful.
@@ -240,17 +333,47 @@ def _structured_visual(narration: str) -> dict | None:
         ):
             continue
 
+        relationship = match.groupdict().get("verb") or match.groupdict().get("action") or "forms"
+        if relationship.lower() == "causing":
+            relationship = "causes"
+
         return {
-            "type": "flow",
+            "type": "scene-graph",
             "title": "How the Ideas Connect",
             "nodes": [
-                {"label": left, "icon": "dot", "color": "teal"},
-                {"label": right, "icon": "check", "color": "gold"},
+                {
+                    "id": "source",
+                    "label": left,
+                    "x": 300,
+                    "y": 175,
+                    "size": 38,
+                    "color": "#4FD1C5",
+                    "appearAt": 0.2,
+                },
+                {
+                    "id": "outcome",
+                    "label": right,
+                    "x": 700,
+                    "y": 175,
+                    "size": 38,
+                    "color": "#F2B84B",
+                    "appearAt": 0.45,
+                },
             ],
+            "links": [
+                {
+                    "from": "source",
+                    "to": "outcome",
+                    "label": relationship.upper(),
+                    "color": "#4FD1C5",
+                    "style": "solid",
+                    "appearAt": 0.4,
+                }
+            ],
+            "footnote": "Relationship identified from the narration",
         }
 
     return None
-
 
 def scene_planner_node(state: VideoState) -> dict:
     """Create a deterministic scene plan from an approved script."""
