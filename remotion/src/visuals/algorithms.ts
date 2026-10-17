@@ -223,7 +223,7 @@ export const treeTrace = (t: Bst, algo: TreeAlgorithm): TreeFrame[] => {
   }
   const order = traversalOrder(t, algo);
   const frames: TreeFrame[] = order.map((v, i) => ({
-    shown: t.order, active: v, visited: order.slice(0, i), note: `Visit ${v}`,
+    shown: t.order, active: v, visited: order.slice(0, i + 1), note: `Visit ${v}`,
   }));
   frames.push({ shown: t.order, visited: order, note: "Traversal complete" });
   return frames;
