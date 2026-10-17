@@ -226,18 +226,35 @@ Rules:
 - Do NOT use the same visual type for consecutive scenes unless their processKind is genuinely the same.
 - Labels: max 3 words, UPPERCASE for node labels. Footnote: one factual sentence.
 - Only use facts from the narration. Never invent numbers.
+- Use cycle only when the narration describes a genuinely repeating process;
+  movement or changing positions alone does not establish a cycle.
+- Use comparison only when the narration explicitly contrasts two things.
 - Every scene needs a title (max 6 words).
 - Icons must come from: sun, panel, cell, bolt, inverter, house, syringe, virus, immune, shield, antibody, rna, protein, gear, link, check, dot, heart, or be omitted.
 - Colors must be one of: teal, gold, red, purple, white.
 
-Type constraints:
-- flow: 2-4 nodes. hub: center + 2-6 satellites. cycle: 3-6 stages. sequence: 2-5 steps (label + one-line detail).
-- layers: 2-6 layers listed TOP to BOTTOM; carriers use 0-based layer indexes.
-- anatomy: subject is circle|capsule|block|blob, 2-6 parts, each with a short note.
-- comparison: left/right each have a heading and 1-4 short points.
-- bars: 2-6 bars with numeric values taken from the narration only.
-- scene-graph: LAST RESORT only. Every node needs x (0-1000) and y (0-430).
-- illustration: do not use.
+Type constraints — follow these exact JSON shapes:
+- flow: {"type":"flow","title":"...","nodes":[{"label":"...","icon":"sun"},{"label":"...","icon":"panel"}]}
+  Use 2-4 node objects, not strings.
+- hub: {"type":"hub","center":{"label":"...","icon":"dot"},"satellites":[{"label":"..."},{"label":"..."}]}
+  Use one center object and 2-6 satellite objects.
+- cycle: {"type":"cycle","title":"...","stages":[{"label":"MORNING POSITION"},{"label":"MIDDAY POSITION"},{"label":"EVENING POSITION"}]}
+  Every stage MUST be an object containing a label. Never return stages as strings.
+- sequence: {"type":"sequence","title":"...","steps":[{"label":"STEP ONE","detail":"..."},{"label":"STEP TWO","detail":"..."}]}
+  Every step MUST be an object. Use 2-5 steps.
+- layers: {"type":"layers","title":"...","layers":[{"label":"TOP LAYER"},{"label":"BOTTOM LAYER"}]}
+  Use 2-6 layer objects listed TOP TO BOTTOM. If carriers are used, fromLayer and toLayer are zero-based indexes.
+- anatomy: {"type":"anatomy","title":"...","subject":"block","parts":[{"label":"PART ONE","note":"..."},{"label":"PART TWO","note":"..."}]}
+  subject must be circle, capsule, block, or blob. Use 2-6 part objects.
+- comparison: {"type":"comparison","title":"...","left":{"heading":"...","points":["..."]},"right":{"heading":"...","points":["..."]}}
+  Each side needs a heading and 1-4 point strings.
+- bars: {"type":"bars","title":"...","bars":[{"label":"...","value":10},{"label":"...","value":20}]}
+  Use 2-6 bars. Each numeric value MUST exactly match a number explicitly stated in that scene's narration. Do not estimate, infer, invent, or use illustrative values. If the narration has no suitable explicit numbers, choose another visual type.
+- scene-graph: LAST RESORT only. Shape:
+  {"type":"scene-graph","title":"...","nodes":[{"id":"a","label":"A","x":200,"y":150},{"id":"b","label":"B","x":600,"y":150}],"links":[{"from":"a","to":"b","label":"..."}]}
+  Every node needs a unique id, x from 0-1000, and y from 0-430. The links array is REQUIRED and must be present, even if empty. Every link's from and to must reference node ids.
+- All nested nodes, stages, steps, layers, parts, bars, and links must be JSON objects with the required fields, not plain strings.
+- Never use illustration. If no valid visual can be designed from the narration, return visual as null.
 """.strip()
 
 
@@ -262,7 +279,9 @@ def _call_gemini_planner(
         return [None] * len(scenes)
 
     scenes_text = "\n\n".join(
-        f"Scene {s['scene_number']}:\n{s['narration']}"
+        f"Scene {s['scene_number']}:\n"
+        f"Narration: {s['narration']}\n"
+        f"Visual direction: {s.get('visual_description', 'Choose a visual based on the narration.')}"
         for s in scenes
     )
 
@@ -322,14 +341,37 @@ def _call_gemini_planner(
                     "layers": _LayersSpec, "anatomy": _AnatomySpec,
                     "comparison": _ComparisonSpec, "scene-graph": _SceneGraphSpec,
                 }
+
                 if vtype in _model_map:
                     validated = _model_map[vtype].model_validate(visual_dict)
-                    validated_visual = validated.model_dump(exclude_none=True, by_alias=True)
-                    # Pydantic renames from_ back to from for scene-graph links
-                    if vtype == "scene-graph" and "links" in validated_visual:
-                        for lnk in validated_visual["links"]:
-                            if "from_" in lnk and "from" not in lnk:
-                                lnk["from"] = lnk.pop("from_")
+
+                    # Bar values must be explicitly supported by this scene's narration.
+                    if vtype == "bars":
+                        narration = scenes[i].get("narration", "")
+                        number_matches = re.findall(
+                            r"(?<![\w.])\d[\d,]*(?:\.\d+)?%?",
+                            narration,
+                        )
+                        narration_numbers = {
+                            float(number.rstrip("%").replace(",", ""))
+                            for number in number_matches
+                        }
+
+                        bar_values = [bar.value for bar in validated.bars]
+
+                        if not narration_numbers or any(
+                            not any(abs(value - spoken) < 1e-9 for spoken in narration_numbers)
+                            for value in bar_values
+                        ):
+                            raise ValueError(
+                                "Bar values must match numbers explicitly stated "
+                                "in the scene narration."
+                            )
+
+                    validated_visual = validated.model_dump(
+                        exclude_none=True,
+                        by_alias=True,
+                    )
             except Exception as exc:
                 print(f"[visual-planner] scene {scene_num} visual invalid: {exc}")
 
@@ -390,7 +432,7 @@ def _visual_description(topic: str, narration: str) -> str:
         )
 
     # Heart circulation: describe the relationship narrated in this scene.
-    if re.search(r"\bheart\b|\bcardiac\b", text):
+    if re.search(r"\bheart\b|\bcardiac\b", topic_text):
         if re.search(
             r"venae cavae|returning from the body|enters the right side",
             narration,
@@ -488,7 +530,30 @@ def _visual_description(topic: str, narration: str) -> str:
 
     # Solar concepts: prefer the mechanism or component actually discussed.
     if re.search(r"solar|photovoltaic|sunlight", text):
+        # A closing summary should communicate the overall application.
+        # A tracking detail must not take over the entire scene.
         if re.search(
+            r"whether mounted|these systems turn|power our lives|"
+            r"clean, reliable energy|overall|in summary|to sum up",
+            narration,
+            re.IGNORECASE,
+        ):
+            focus = (
+                "the overall solar-power application, showing sunlight "
+                "being used to provide useful electricity and power "
+                "everyday life; treat tracking as a secondary detail"
+            )
+        elif re.search(
+            r"track(?:ing|er|s)?|follow(?:ing|s)? the sun|sun's path|sun’s path",
+            narration,
+            re.IGNORECASE,
+        ):
+            focus = (
+                "solar tracking technology following the sun's path "
+                "compared with fixed-mounted panels, without inventing "
+                "quantities or guaranteed performance gains"
+            )
+        elif re.search(
             r"batter(?:y|ies)|stor(?:e|es|ed|ing)|storage",
             narration,
             re.IGNORECASE,

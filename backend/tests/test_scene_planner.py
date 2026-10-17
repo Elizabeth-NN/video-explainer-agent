@@ -268,6 +268,25 @@ def test_heart_scene_visual_descriptions_follow_blood_flow_narration():
     assert all("scene narration:" in item for item in descriptions)
     assert all("illustrate the specific idea in this scene" not in item for item in descriptions)
 
+
+def test_solar_scene_mentioning_the_heart_does_not_trigger_heart_description():
+    scene = scene_planner_node(
+        {
+            "topic": "How solar panels turn sunlight into electricity",
+            "script": (
+                "At the heart of these panels are photovoltaic cells."
+            ),
+            "approved": True,
+        }
+    )["scenes"][0]
+
+    description = scene["visual_description"].lower()
+
+    assert "photovoltaic" in description or "solar" in description
+    assert "blood returning from the body" not in description
+    assert "pulmonary artery" not in description
+
+
 def test_water_cycle_sunlight_does_not_trigger_solar_description():
     scene = scene_planner_node(
         {
@@ -413,3 +432,298 @@ def test_semantic_graph_failure_uses_existing_visual_fallback():
 
     # The deterministic planner still recognises this relationship.
     assert result["scenes"][0]["visual"]["type"] == "scene-graph"
+
+def test_gemini_planner_rejects_bar_values_not_in_narration(monkeypatch):
+    import json
+    from unittest.mock import patch
+
+    from app.graph.scene_planner import _call_gemini_planner
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    response_data = [
+        {
+            "concept": "Electricity generation",
+            "processKind": "quantity",
+            "visual": {
+                "type": "bars",
+                "title": "DC GENERATION",
+                "bars": [
+                    {"label": "ELECTRON FLOW", "value": 80, "color": "teal"},
+                    {"label": "DC OUTPUT", "value": 95, "color": "gold"},
+                ],
+            },
+        }
+    ]
+
+    with (
+        patch("google.genai.Client") as client_class,
+        patch("google.genai.types.GenerateContentConfig"),
+    ):
+        client = client_class.return_value
+        client.models.generate_content.return_value.text = json.dumps(
+            response_data
+        )
+
+        result = _call_gemini_planner(
+            [
+                {
+                    "scene_number": 1,
+                    "narration": (
+                        "This movement creates direct current electricity."
+                    ),
+                }
+            ],
+            "How solar panels work",
+        )
+
+    assert result[0] is not None
+    assert result[0]["visual"] is None
+
+def test_gemini_planner_accepts_bar_values_stated_in_narration(monkeypatch):
+    import json
+    from unittest.mock import patch
+
+    from app.graph.scene_planner import _call_gemini_planner
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    response_data = [
+        {
+            "concept": "Comparing stated quantities",
+            "processKind": "quantity",
+            "visual": {
+                "type": "bars",
+                "title": "STATED VALUES",
+                "bars": [
+                    {"label": "FIRST VALUE", "value": 80, "color": "teal"},
+                    {"label": "SECOND VALUE", "value": 95, "color": "gold"},
+                ],
+            },
+        }
+    ]
+
+    with (
+        patch("google.genai.Client") as client_class,
+        patch("google.genai.types.GenerateContentConfig"),
+    ):
+        client = client_class.return_value
+        client.models.generate_content.return_value.text = json.dumps(
+            response_data
+        )
+
+        result = _call_gemini_planner(
+            [
+                {
+                    "scene_number": 1,
+                    "narration": (
+                        "The first value is 80 and the second value is 95."
+                    ),
+                }
+            ],
+            "Comparing two values",
+        )
+
+    assert result[0] is not None
+    assert result[0]["visual"]["type"] == "bars"
+
+
+def test_gemini_planner_rejects_cycle_stages_returned_as_strings(monkeypatch):
+    import json
+    from unittest.mock import patch
+
+    from app.graph.scene_planner import _call_gemini_planner
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    response_data = [
+        {
+            "concept": "Sun tracking",
+            "processKind": "cycle",
+            "visual": {
+                "type": "cycle",
+                "title": "TRACKING THE SUN",
+                "stages": [
+                    "MORNING POSITION",
+                    "MIDDAY POSITION",
+                    "EVENING POSITION",
+                ],
+            },
+        }
+    ]
+
+    with (
+        patch("google.genai.Client") as client_class,
+        patch("google.genai.types.GenerateContentConfig"),
+    ):
+        client = client_class.return_value
+        client.models.generate_content.return_value.text = json.dumps(
+            response_data
+        )
+
+        result = _call_gemini_planner(
+            [
+                {
+                    "scene_number": 1,
+                    "narration": (
+                        "Tracking technology follows the sun across the sky."
+                    ),
+                }
+            ],
+            "How solar panels work",
+        )
+
+    assert result[0] is not None
+    assert result[0]["concept"] == "Sun tracking"
+    assert result[0]["visual"] is None
+
+
+def test_gemini_planner_rejects_scene_graph_missing_links(monkeypatch):
+    import json
+    from unittest.mock import patch
+
+    from app.graph.scene_planner import _call_gemini_planner
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    response_data = [
+        {
+            "concept": "Solar energy conversion",
+            "processKind": "mechanism",
+            "visual": {
+                "type": "scene-graph",
+                "title": "ENERGY CONVERSION",
+                "nodes": [
+                    {
+                        "id": "sunlight",
+                        "label": "SUNLIGHT",
+                        "x": 200,
+                        "y": 150,
+                    },
+                    {
+                        "id": "electricity",
+                        "label": "ELECTRICITY",
+                        "x": 700,
+                        "y": 150,
+                    },
+                ],
+            },
+        }
+    ]
+
+    with (
+        patch("google.genai.Client") as client_class,
+        patch("google.genai.types.GenerateContentConfig"),
+    ):
+        client = client_class.return_value
+        client.models.generate_content.return_value.text = json.dumps(
+            response_data
+        )
+
+        result = _call_gemini_planner(
+            [
+                {
+                    "scene_number": 1,
+                    "narration": (
+                        "Sunlight is converted into electrical energy."
+                    ),
+                }
+            ],
+            "How solar panels work",
+        )
+
+    assert result[0] is not None
+    assert result[0]["concept"] == "Solar energy conversion"
+    assert result[0]["visual"] is None
+
+
+def test_solar_closing_summary_does_not_overfocus_on_tracking():
+    scene = scene_planner_node(
+        {
+            "topic": "How solar panels turn sunlight into electricity",
+            "script": (
+                "Whether mounted on a roof or part of a large-scale solar "
+                "farm that tracks the sun across the sky, these systems "
+                "turn simple sunlight into clean, reliable energy to "
+                "power our lives."
+            ),
+            "approved": True,
+        }
+    )["scenes"][0]
+
+    description = scene["visual_description"].lower()
+    assert "overall solar-power application" in description
+    assert "everyday life" in description
+    assert "tracking as a secondary detail" in description
+
+
+def test_solar_tracking_description_focuses_on_following_the_sun():
+    scene = scene_planner_node(
+        {
+            "topic": "How solar panels turn sunlight into electricity",
+            "script": (
+                "Some solar systems use tracking technology to follow "
+                "the sun's path across the sky."
+            ),
+            "approved": True,
+        }
+    )["scenes"][0]
+
+    description = scene["visual_description"].lower()
+    assert "tracking" in description
+    assert "sun's path" in description
+    assert "narration" in description
+
+
+def test_gemini_planner_receives_scene_visual_direction(monkeypatch):
+    import json
+    from unittest.mock import patch
+
+    from app.graph.scene_planner import _call_gemini_planner
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    response_data = [
+        {
+            "concept": "Sun tracking",
+            "processKind": "mechanism",
+            "visual": {
+                "type": "flow",
+                "title": "SUN TRACKING",
+                "nodes": [
+                    {"label": "SUN PATH", "icon": "sun"},
+                    {"label": "TRACKING PANEL", "icon": "panel"},
+                ],
+            },
+        }
+    ]
+
+    with (
+        patch("google.genai.Client") as client_class,
+        patch("google.genai.types.GenerateContentConfig"),
+    ):
+        client = client_class.return_value
+        client.models.generate_content.return_value.text = json.dumps(
+            response_data
+        )
+
+        _call_gemini_planner(
+            [
+                {
+                    "scene_number": 1,
+                    "narration": (
+                        "Tracking technology follows the sun's path."
+                    ),
+                    "visual_description": (
+                        "Illustrate solar tracking technology following "
+                        "the sun's path."
+                    ),
+                }
+            ],
+            "How solar panels work",
+        )
+
+        prompt = client.models.generate_content.call_args.kwargs["contents"]
+
+    assert "Visual direction:" in prompt
+    assert "Illustrate solar tracking technology following the sun's path." in prompt
