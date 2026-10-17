@@ -3,19 +3,29 @@ import { VisualSpecSchema } from "./visualAdapter";
 import {
   AbsoluteFill,
   Audio,
-  Easing,
   Sequence,
-  interpolate,
   staticFile,
-  useCurrentFrame,
-  useVideoConfig,
 } from "remotion";
 import { Illustration, pickIllustration, type IllustrationId, type Focus } from "./illustrations";
+import {
+  C,
+  COLOR,
+  type ColorName,
+  CLAMP,
+  ease,
+  stage,
+  osc,
+  useT,
+  type Pt,
+  wrap,
+  Footnote,
+  ACCENTS,
+} from "./visuals/Kit";
 /* ──────────────────────────────────────────────────────────────
    Types
    ────────────────────────────────────────────────────────────── */
 
-export type ColorName = "teal" | "gold" | "red" | "purple" | "white";
+export type { ColorName };
 
 export type IconName =
   | "sun" | "panel" | "cell" | "bolt" | "inverter" | "house"
@@ -115,25 +125,6 @@ export type ExplainerProps = {
    Palette + animation helpers
    ────────────────────────────────────────────────────────────── */
 
-const C = {
-  bg: "#0B1220",
-  panel: "#17233A",
-  teal: "#4FD1C5",
-  gold: "#F2B84B",
-  red: "#E87979",
-  white: "#F4F6FA",
-  muted: "#A6B0C2",
-  purple: "#A78BFA",
-};
-
-const COLOR: Record<ColorName, string> = {
-  teal: C.teal,
-  gold: C.gold,
-  red: C.red,
-  purple: C.purple,
-  white: C.white,
-};
-
 const COLOR_ALIASES: Record<string, ColorName> = {
   green: "teal", blue: "teal", cyan: "teal", yellow: "gold", orange: "gold", pink: "red",
 };
@@ -150,29 +141,6 @@ export const resolveColor = (raw: unknown, asHex: boolean): string | undefined =
 
 /** Frames of crossfade between scenes. */
 const OVERLAP = 10;
-
-const CLAMP = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
-const ease = Easing.bezier(0.22, 1, 0.36, 1);
-
-/** 0 → 1 between `start` and `start + dur` frames, eased, clamped. */
-const stage = (frame: number, start: number, dur = 20): number =>
-  interpolate(frame, [start, start + Math.max(1, dur)], [0, 1], {
-    ...CLAMP,
-    easing: ease,
-  });
-
-/** fps-independent oscillation. hz = cycles per second. */
-const osc = (t: number, hz: number, amp: number, phase = 0): number =>
-  Math.sin(2 * Math.PI * hz * t + phase) * amp;
-
-/** frame, fps, time in seconds, and a seconds→frames converter. */
-const useT = () => {
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  return { frame, fps, t: frame / fps, s: (sec: number) => sec * fps };
-};
-
-type Pt = [number, number];
 
 const bezier = (a: Pt, c1: Pt, c2: Pt, b: Pt, p: number): Pt => {
   const u = 1 - p;
@@ -464,40 +432,11 @@ const Link: React.FC<{
   );
 };
 
-const Footnote: React.FC<{ text?: string; at: number }> = ({ text, at }) => {
-  const { frame, s } = useT();
-  if (!text) return null;
-  const p = stage(frame, at, s(0.5));
-  return (
-    <text x="500" y="414" textAnchor="middle" fill={C.muted} fontSize="17"
-      opacity={p} transform={`translate(0 ${(1 - p) * 6})`}>
-      {text}
-    </text>
-  );
-};
-
-const wrap = (text: string, max: number, maxLines = 2): string[] => {
-  const lines: string[] = [];
-  let cur = "";
-  for (const w of text.split(/\s+/).filter(Boolean)) {
-    if (cur && (cur + " " + w).length > max) { lines.push(cur); cur = w; }
-    else cur = cur ? `${cur} ${w}` : w;
-  }
-  if (cur) lines.push(cur);
-  if (lines.length > maxLines) {
-    lines.length = maxLines;
-    lines[maxLines - 1] = lines[maxLines - 1].slice(0, Math.max(1, max - 1)) + "…";
-  }
-  return lines;
-};
-
 /* ──────────────────────────────────────────────────────────────
    Diagrams
    ────────────────────────────────────────────────────────────── */
 
 type Spec<T extends VisualSpec["type"]> = Extract<VisualSpec, { type: T }>;
-
-const ACCENTS = [C.teal, C.gold, C.purple, C.red];
 
 const CycleDiagram: React.FC<{ spec: Spec<"cycle"> }> = ({ spec }) => {
   const { frame, s } = useT();
