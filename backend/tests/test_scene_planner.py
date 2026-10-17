@@ -336,3 +336,80 @@ def test_water_cycle_clouds_releasing_precipitation_creates_scene_graph():
         "PRECIPITATION",
     ]
     assert scene["visual"]["links"][0]["label"] == "RELEASE"
+
+
+def test_semantic_graph_pipeline_is_opt_in():
+    from unittest.mock import patch
+
+    state = {
+        "topic": "Energy",
+        "script": "Energy causes temperature to increase.",
+        "approved": True,
+    }
+
+    with patch(
+        "app.graph.scene_planner.extract_semantic_graph"
+    ) as extractor:
+        result = scene_planner_node(state)
+
+    extractor.assert_not_called()
+    assert result["scenes"][0]["visual"]["type"] == "scene-graph"
+
+
+def test_semantic_graph_pipeline_creates_remotion_visual():
+    from unittest.mock import patch
+
+    graph = {
+        "schema_version": 1,
+        "nodes": [
+            {"id": "energy", "label": "Energy"},
+            {"id": "temperature", "label": "Temperature"},
+        ],
+        "edges": [
+            {
+                "source": "energy",
+                "target": "temperature",
+                "relationship": "increases",
+            }
+        ],
+    }
+    state = {
+        "topic": "Energy",
+        "script": "Energy changes temperature.",
+        "approved": True,
+    }
+
+    with patch(
+        "app.graph.scene_planner.extract_semantic_graph",
+        return_value=graph,
+    ):
+        result = scene_planner_node(state, use_semantic_graph=True)
+
+    visual = result["scenes"][0]["visual"]
+    assert visual["type"] == "scene-graph"
+    assert {node["id"] for node in visual["nodes"]} == {
+        "energy",
+        "temperature",
+    }
+    assert visual["links"][0]["from"] == "energy"
+    assert visual["links"][0]["to"] == "temperature"
+    assert visual["links"][0]["label"] == "INCREASES"
+
+
+def test_semantic_graph_failure_uses_existing_visual_fallback():
+    from unittest.mock import patch
+
+    state = {
+        "topic": "Energy",
+        "script": "Heat causes water to evaporate.",
+        "approved": True,
+    }
+
+    with patch(
+        "app.graph.scene_planner.extract_semantic_graph",
+        return_value=None,
+    ):
+        result = scene_planner_node(state, use_semantic_graph=True)
+
+    # The deterministic planner still recognises this relationship.
+    assert result["scenes"][0]["visual"]["type"] == "scene-graph"

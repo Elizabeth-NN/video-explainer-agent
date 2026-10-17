@@ -25,7 +25,11 @@ def route_after_critique(state: VideoState) -> str:
     return "revise"
 
 
-def build_graph(checkpointer=None, use_llm: bool = False):
+def build_graph(
+    checkpointer=None,
+    use_llm: bool = False,
+    use_semantic_graph: bool = False,
+):
     """Build the graph with either Gemini or the deterministic scriptwriter."""
     graph = StateGraph(VideoState)
 
@@ -35,7 +39,13 @@ def build_graph(checkpointer=None, use_llm: bool = False):
     graph.add_node("scriptwriter", writer)
 
     graph.add_node("critic", critic_node)
-    graph.add_node("scene_planner", scene_planner_node)
+    graph.add_node(
+        "scene_planner",
+        lambda state: scene_planner_node(
+            state,
+            use_semantic_graph=use_semantic_graph,
+        ),
+    )
     graph.add_node(
         "revise_script",
         lambda state: revise_script_node(state, writer=writer),

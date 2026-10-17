@@ -1,6 +1,9 @@
 import re
 
 from app.graph.state import VideoState
+from app.graph.graph_layout import layout_scene_graph
+from app.graph.remotion_adapter import to_remotion_visual
+from app.graph.semantic_extractor import extract_semantic_graph
 
 
 WORDS_PER_MINUTE = 130
@@ -375,7 +378,27 @@ def _structured_visual(narration: str) -> dict | None:
 
     return None
 
-def scene_planner_node(state: VideoState) -> dict:
+
+def _semantic_visual(narration: str) -> dict | None:
+    """Build a Remotion visual through the semantic graph pipeline."""
+    graph = extract_semantic_graph(narration)
+
+    if graph is None:
+        return None
+
+    try:
+        positioned_graph = layout_scene_graph(graph)
+        return to_remotion_visual(positioned_graph)
+    except (ValueError, TypeError, KeyError):
+        # Invalid or unlayoutable graphs should not break video generation.
+        return None
+
+
+def scene_planner_node(
+    state: VideoState,
+    *,
+    use_semantic_graph: bool = False,
+) -> dict:
     """Create a deterministic scene plan from an approved script."""
     if not state.get("approved", False):
         return {"scenes": []}
@@ -400,7 +423,15 @@ def scene_planner_node(state: VideoState) -> dict:
             "duration_seconds": duration,
         }
 
-        visual = _structured_visual(narration)
+        visual = None
+
+        if use_semantic_graph:
+            visual = _semantic_visual(narration)
+
+        # Preserve the existing deterministic visual planner as the fallback.
+        if visual is None:
+            visual = _structured_visual(narration)
+
         if visual is not None:
             scene["visual"] = visual
 
