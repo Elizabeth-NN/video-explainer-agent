@@ -1197,3 +1197,36 @@ def test_llm_workflow_uses_selected_writer_for_revision():
     assert result["script"] == "Revised draft."
     assert result["revision_count"] == 1
     assert result["approved"] is True
+
+
+def test_expand_research_queries_for_earthquakes():
+    from app.graph.nodes import expand_research_queries
+
+    queries = expand_research_queries("How Earthquakes Happen")
+
+    assert queries[0] == "How Earthquakes Happen"
+    assert "Earthquake" in queries
+    assert "Fault (geology)" in queries
+    assert "Plate tectonics" in queries
+    assert "Seismic wave" in queries
+    assert len(queries) == len({query.casefold() for query in queries})
+
+
+def test_earthquake_relevance_accepts_geology_sources():
+    topic = "How Earthquakes Happen"
+
+    assert is_relevant_source(
+        topic,
+        "Fault (geology)",
+        "Rapid movement along faults causes most earthquakes.",
+    )
+    assert is_relevant_source(
+        topic,
+        "Plate tectonics",
+        "Earth's lithosphere is divided into moving tectonic plates.",
+    )
+    assert not is_relevant_source(
+        topic,
+        "Earthquake (film)",
+        "A fictional film about a family and their personal problems.",
+    )

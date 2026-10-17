@@ -90,6 +90,16 @@ TOPIC_CONCEPTS = {
         "solar electricity",
         "concentrated solar",
     },
+    "earthquake": {
+        "tectonic plate",
+        "plate tectonics",
+        "fault",
+        "seismic wave",
+        "earth's crust",
+        "earthquake rupture",
+        "epicenter",
+        "hypocenter",
+    },
     "inflation": {
         "general price level",
         "goods and services",
@@ -286,6 +296,12 @@ def expand_research_queries(topic: str) -> list[str]:
             "Application programming interface",
             "Representational state transfer",
             "HTTP",
+        ],
+        "earthquake": [
+            "Earthquake",
+            "Fault (geology)",
+            "Plate tectonics",
+            "Seismic wave",
         ],
     }
 
