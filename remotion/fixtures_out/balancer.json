@@ -1,0 +1,23 @@
+{
+  "topic": "Fixture: balancer",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Fixture visual: balancer",
+      "visualDescription": "",
+      "audioFile": "silence.wav",
+      "durationInFrames": 300,
+      "from": 0,
+      "visual": {
+        "type": "balancer",
+        "title": "Least connections",
+        "servers": 3,
+        "requests": 8,
+        "algorithm": "least-connections"
+      }
+    }
+  ]
+}

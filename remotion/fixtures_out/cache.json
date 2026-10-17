@@ -1,0 +1,31 @@
+{
+  "topic": "Fixture: cache",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Fixture visual: cache",
+      "visualDescription": "",
+      "audioFile": "silence.wav",
+      "durationInFrames": 300,
+      "from": 0,
+      "visual": {
+        "type": "cache",
+        "title": "An LRU cache",
+        "capacity": 3,
+        "policy": "lru",
+        "accesses": [
+          "A",
+          "B",
+          "C",
+          "A",
+          "D",
+          "B",
+          "A"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "topic": "Fixture: code",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Fixture visual: code",
+      "visualDescription": "",
+      "audioFile": "silence.wav",
+      "durationInFrames": 300,
+      "from": 0,
+      "visual": {
+        "type": "code",
+        "title": "What this loop does",
+        "language": "python",
+        "lines": [
+          "total = 0",
+          "for n in [1, 2, 3]:",
+          "    total += n",
+          "print(total)"
+        ],
+        "steps": [
+          {
+            "line": 1,
+            "note": "Start the total at zero"
+          },
+          {
+            "line": 3,
+            "note": "Add each number to the total"
+          },
+          {
+            "line": 4,
+            "note": "Print the final result",
+            "output": "6"
+          }
+        ]
+      }
+    }
+  ]
+}

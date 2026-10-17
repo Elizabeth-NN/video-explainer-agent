@@ -1,0 +1,67 @@
+{
+  "topic": "Fixture: join",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Fixture visual: join",
+      "visualDescription": "",
+      "audioFile": "silence.wav",
+      "durationInFrames": 300,
+      "from": 0,
+      "visual": {
+        "type": "join",
+        "title": "A left join",
+        "left": {
+          "name": "users",
+          "columns": [
+            "id",
+            "name"
+          ],
+          "rows": [
+            [
+              1,
+              "Ana"
+            ],
+            [
+              2,
+              "Bo"
+            ],
+            [
+              3,
+              "Cy"
+            ]
+          ]
+        },
+        "right": {
+          "name": "orders",
+          "columns": [
+            "user_id",
+            "item"
+          ],
+          "rows": [
+            [
+              1,
+              "Book"
+            ],
+            [
+              1,
+              "Pen"
+            ],
+            [
+              3,
+              "Cup"
+            ]
+          ]
+        },
+        "on": {
+          "left": "id",
+          "right": "user_id"
+        },
+        "joinType": "left"
+      }
+    }
+  ]
+}

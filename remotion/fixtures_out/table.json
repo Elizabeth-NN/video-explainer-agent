@@ -1,0 +1,65 @@
+{
+  "topic": "Fixture: table",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Fixture visual: table",
+      "visualDescription": "",
+      "audioFile": "silence.wav",
+      "durationInFrames": 300,
+      "from": 0,
+      "visual": {
+        "type": "table",
+        "title": "Selecting rows",
+        "name": "users",
+        "columns": [
+          "id",
+          "name",
+          "age",
+          "city"
+        ],
+        "rows": [
+          [
+            1,
+            "Ana",
+            31,
+            "Lima"
+          ],
+          [
+            2,
+            "Bo",
+            25,
+            "Oslo"
+          ],
+          [
+            3,
+            "Cy",
+            40,
+            "Rome"
+          ],
+          [
+            4,
+            "Di",
+            28,
+            "Cairo"
+          ]
+        ],
+        "query": {
+          "kind": "select",
+          "columns": [
+            "name",
+            "age"
+          ],
+          "where": {
+            "column": "age",
+            "op": ">",
+            "value": 27
+          }
+        }
+      }
+    }
+  ]
+}

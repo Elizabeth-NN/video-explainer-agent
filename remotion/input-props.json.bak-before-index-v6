@@ -1,0 +1,166 @@
+{
+  "topic": "How Earthquakes Happen",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Imagine the ground beneath your feet, which feels solid, is actually made of massive sections of Earth’s crust.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: Imagine the ground beneath your feet, which feels solid, is actually made of massive sections of Earth’s crust. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "visual": {
+        "type": "anatomy",
+        "title": "Earth's Crustal Sections",
+        "subject": "block",
+        "parts": [
+          {
+            "label": "SURFACE",
+            "note": "The ground we stand on."
+          },
+          {
+            "label": "CRUSTAL SECTIONS",
+            "note": "Massive solid segments of Earth."
+          }
+        ]
+      },
+      "audioFile": "audio/scene_001.mp3",
+      "durationInFrames": 167,
+      "from": 0
+    },
+    {
+      "sceneNumber": 2,
+      "narration": "These sections are separated by fractures called faults.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: These sections are separated by fractures called faults. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "visual": {
+        "type": "scene-graph",
+        "title": "Faults as Boundaries",
+        "nodes": [
+          {
+            "id": "s1",
+            "label": "SECTION A",
+            "x": 200,
+            "y": 200
+          },
+          {
+            "id": "s2",
+            "label": "SECTION B",
+            "x": 800,
+            "y": 200
+          }
+        ],
+        "links": [
+          {
+            "from": "s1",
+            "to": "s2",
+            "label": "FAULT"
+          }
+        ]
+      },
+      "audioFile": "audio/scene_002.mp3",
+      "durationInFrames": 94,
+      "from": 167
+    },
+    {
+      "sceneNumber": 3,
+      "narration": "Large faults are created by plate tectonic forces, often forming the boundaries where these massive plates meet.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: Large faults are created by plate tectonic forces, often forming the boundaries where these massive plates meet. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "visual": {
+        "type": "layers",
+        "title": "Fault Formation",
+        "layers": [
+          {
+            "label": "TECTONIC FORCES"
+          },
+          {
+            "label": "PLATE BOUNDARY"
+          },
+          {
+            "label": "LARGE FAULT"
+          }
+        ]
+      },
+      "audioFile": "audio/scene_003.mp3",
+      "durationInFrames": 172,
+      "from": 261
+    },
+    {
+      "sceneNumber": 4,
+      "narration": "Most earthquakes happen when there is a sudden, rapid movement along these active faults, releasing a massive amount of energy.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: Most earthquakes happen when there is a sudden, rapid movement along these active faults, releasing a massive amount of energy. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "visual": {
+        "type": "flow",
+        "title": "Earthquake Energy Release",
+        "nodes": [
+          {
+            "label": "RAPID MOVEMENT",
+            "icon": "bolt"
+          },
+          {
+            "label": "ENERGY RELEASE",
+            "icon": "sun"
+          }
+        ]
+      },
+      "audioFile": "audio/scene_004.mp3",
+      "durationInFrames": 185,
+      "from": 433
+    },
+    {
+      "sceneNumber": 5,
+      "narration": "While some faults move slowly, others can cause devastating events, like the 1700 Cascadia earthquake or the 2015 Nepal earthquake.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: While some faults move slowly, others can cause devastating events, like the 1700 Cascadia earthquake or the 2015 Nepal earthquake. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "visual": {
+        "type": "comparison",
+        "title": "Fault Movement Types",
+        "left": {
+          "heading": "SLOW FAULTS",
+          "points": [
+            "Gradual movement",
+            "Low impact"
+          ]
+        },
+        "right": {
+          "heading": "DEVASTATING FAULTS",
+          "points": [
+            "1700 CASCADIA",
+            "2015 NEPAL"
+          ]
+        }
+      },
+      "audioFile": "audio/scene_005.mp3",
+      "durationInFrames": 225,
+      "from": 618
+    },
+    {
+      "sceneNumber": 6,
+      "narration": "Scientists measure the strength of these events using seismic magnitude scales, which analyze seismic waves recorded on a seismogram.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: Scientists measure the strength of these events using seismic magnitude scales, which analyze seismic waves recorded on a seismogram. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "visual": {
+        "type": "layers",
+        "title": "Measuring Earthquake Strength",
+        "layers": [
+          {
+            "label": "SEISMOGRAM DATA"
+          },
+          {
+            "label": "SEISMIC WAVES"
+          },
+          {
+            "label": "MAGNITUDE SCALE"
+          }
+        ]
+      },
+      "audioFile": "audio/scene_006.mp3",
+      "durationInFrames": 200,
+      "from": 843
+    },
+    {
+      "sceneNumber": 7,
+      "narration": "By studying these waves and the history of past ruptures, experts work to better understand the geological processes occurring deep underground and the nature of the ground shaking that impacts our world.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: By studying these waves and the history of past ruptures, experts work to better understand the geological processes occurring deep underground and the nature of the ground shaking that impacts our world. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "audioFile": "audio/scene_007.mp3",
+      "durationInFrames": 272,
+      "from": 1043
+    }
+  ]
+}

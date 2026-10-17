@@ -1,0 +1,32 @@
+{
+  "topic": "Fixture: sharding",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Fixture visual: sharding",
+      "visualDescription": "",
+      "audioFile": "silence.wav",
+      "durationInFrames": 300,
+      "from": 0,
+      "visual": {
+        "type": "sharding",
+        "title": "Hash sharding",
+        "shards": 3,
+        "keys": [
+          "ana",
+          "ben",
+          "cara",
+          "dan",
+          "eli",
+          "fay",
+          "gus",
+          "hal"
+        ],
+        "strategy": "hash"
+      }
+    }
+  ]
+}

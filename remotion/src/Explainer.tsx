@@ -1,10 +1,12 @@
 import React, { useMemo } from "react";
-import { VisualSpecSchema } from "./visualAdapter";
+import { resolveVisual as adapterResolveVisual } from "./visualAdapter";
+import { findVisual, type LibrarySpec } from "./visuals";
 import {
   AbsoluteFill,
   Audio,
   Sequence,
   staticFile,
+  interpolate,
 } from "remotion";
 import { Illustration, pickIllustration, type IllustrationId, type Focus } from "./illustrations";
 import {
@@ -98,7 +100,8 @@ export type VisualSpec =
       parts: { label: string; note?: string }[]; footnote?: string }
   | { type: "comparison"; title?: string;
       left: { heading: string; points: string[]; color?: ColorName };
-      right: { heading: string; points: string[]; color?: ColorName }; footnote?: string };
+      right: { heading: string; points: string[]; color?: ColorName }; footnote?: string }
+  | LibrarySpec;
 
 export type ExplainerScene = {
   sceneNumber: number;
@@ -942,22 +945,26 @@ const SceneGraphDiagram: React.FC<{
   );
 };
 
-const Diagram: React.FC<{ spec: VisualSpec; duration: number }> = ({ spec, duration }) => (
-  <svg viewBox="0 0 1000 430" width="100%" height="100%">
-    {spec.type === "flow" && <FlowDiagram spec={spec} />}
-    {spec.type === "hub" && <HubDiagram spec={spec} />}
-    {spec.type === "bars" && <BarsDiagram spec={spec} />}
-    {spec.type === "scene-graph" && <SceneGraphDiagram spec={spec} />}
-    {spec.type === "sequence" && <SequenceDiagram spec={spec} />}
-    {spec.type === "cycle" && <CycleDiagram spec={spec} />}
-    {spec.type === "layers" && <LayersDiagram spec={spec} />}
-    {spec.type === "anatomy" && <AnatomyDiagram spec={spec} />}
-    {spec.type === "comparison" && <ComparisonDiagram spec={spec} />}
-    {spec.type === "illustration" && (
-      <Illustration id={spec.id} duration={duration} focus={spec.focus} footnote={spec.footnote} />
-    )}
-  </svg>
-);
+const Diagram: React.FC<{ spec: VisualSpec; duration: number }> = ({ spec, duration }) => {
+  const lib = findVisual(spec.type);
+  return (
+    <svg viewBox="0 0 1000 430" width="100%" height="100%">
+      {spec.type === "flow" && <FlowDiagram spec={spec} />}
+      {spec.type === "hub" && <HubDiagram spec={spec} />}
+      {spec.type === "bars" && <BarsDiagram spec={spec} />}
+      {spec.type === "scene-graph" && <SceneGraphDiagram spec={spec} />}
+      {spec.type === "sequence" && <SequenceDiagram spec={spec} />}
+      {spec.type === "cycle" && <CycleDiagram spec={spec} />}
+      {spec.type === "layers" && <LayersDiagram spec={spec} />}
+      {spec.type === "anatomy" && <AnatomyDiagram spec={spec} />}
+      {spec.type === "comparison" && <ComparisonDiagram spec={spec} />}
+      {spec.type === "illustration" && (
+        <Illustration id={spec.id} duration={duration} focus={spec.focus} footnote={spec.footnote} />
+      )}
+      {lib && <lib.Component spec={spec} duration={duration} />}
+    </svg>
+  );
+};
 
 /* ──────────────────────────────────────────────────────────────
    Spec resolution: scene.visual → topic preset → generic fallback
@@ -1401,20 +1408,18 @@ const normalize = (spec: VisualSpec): VisualSpec => {
 };
 
 export const resolveVisual = (raw: unknown): VisualSpec | null => {
-  if (!raw) return null;
-  const parsed = VisualSpecSchema.safeParse(raw);
-  if (!parsed.success) {
-    console.warn("[visual] rejected:", parsed.error.issues[0]);
-    return null;
-  }
-  return normalize(parsed.data as VisualSpec);
+  const data = adapterResolveVisual(raw);
+  if (!data) return null;
+  // Library specs need no icon/color normalizing; only core types do.
+  if (findVisual(data.type)) return data as VisualSpec;
+  return normalize(data as VisualSpec);
 };
 
 const resolveSpec = (scene: ExplainerScene, topic: string): VisualSpec => {
   const planned = resolveVisual(scene.visual);
   if (planned) return planned;
 
-  console.warn(`[visual] scene ${scene.sceneNumber}: no valid planner visual, using legacy routing`);
+  if (scene.visual) console.warn(`[visual] scene ${scene.sceneNumber}: invalid visual, using legacy routing`);
   // ── LEGACY: delete once planner output matches or beats it ──
   const sceneText = `${scene.narration} ${scene.visualDescription || ""}`;
   const pick = pickIllustration(topic, sceneText);

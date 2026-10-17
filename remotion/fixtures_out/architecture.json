@@ -1,0 +1,95 @@
+{
+  "topic": "Fixture: architecture",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Fixture visual: architecture",
+      "visualDescription": "",
+      "audioFile": "silence.wav",
+      "durationInFrames": 300,
+      "from": 0,
+      "visual": {
+        "type": "architecture",
+        "title": "A typical web stack",
+        "nodes": [
+          {
+            "id": "c",
+            "label": "Browser",
+            "kind": "client"
+          },
+          {
+            "id": "cdn",
+            "label": "CDN",
+            "kind": "cdn"
+          },
+          {
+            "id": "lb",
+            "label": "Load balancer",
+            "kind": "loadbalancer"
+          },
+          {
+            "id": "a1",
+            "label": "API 1",
+            "kind": "server"
+          },
+          {
+            "id": "a2",
+            "label": "API 2",
+            "kind": "server"
+          },
+          {
+            "id": "cache",
+            "label": "Cache",
+            "kind": "cache"
+          },
+          {
+            "id": "db",
+            "label": "Database",
+            "kind": "database"
+          }
+        ],
+        "links": [
+          {
+            "from": "c",
+            "to": "cdn"
+          },
+          {
+            "from": "cdn",
+            "to": "lb"
+          },
+          {
+            "from": "lb",
+            "to": "a1"
+          },
+          {
+            "from": "lb",
+            "to": "a2"
+          },
+          {
+            "from": "a1",
+            "to": "cache"
+          },
+          {
+            "from": "a2",
+            "to": "cache"
+          },
+          {
+            "from": "cache",
+            "to": "db"
+          }
+        ],
+        "path": [
+          "c",
+          "cdn",
+          "lb",
+          "a1",
+          "cache",
+          "db"
+        ]
+      }
+    }
+  ]
+}

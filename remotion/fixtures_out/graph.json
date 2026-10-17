@@ -1,0 +1,56 @@
+{
+  "topic": "Fixture: graph",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Fixture visual: graph",
+      "visualDescription": "",
+      "audioFile": "silence.wav",
+      "durationInFrames": 300,
+      "from": 0,
+      "visual": {
+        "type": "graph",
+        "title": "Breadth-first search",
+        "nodes": [
+          "A",
+          "B",
+          "C",
+          "D",
+          "E",
+          "F"
+        ],
+        "edges": [
+          {
+            "from": "A",
+            "to": "B"
+          },
+          {
+            "from": "A",
+            "to": "C"
+          },
+          {
+            "from": "B",
+            "to": "D"
+          },
+          {
+            "from": "C",
+            "to": "E"
+          },
+          {
+            "from": "D",
+            "to": "F"
+          },
+          {
+            "from": "E",
+            "to": "F"
+          }
+        ],
+        "algorithm": "bfs",
+        "start": "A"
+      }
+    }
+  ]
+}

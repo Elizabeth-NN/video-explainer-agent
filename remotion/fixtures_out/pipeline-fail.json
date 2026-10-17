@@ -1,0 +1,42 @@
+{
+  "topic": "Fixture: pipeline-fail",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Fixture visual: pipeline-fail",
+      "visualDescription": "",
+      "audioFile": "silence.wav",
+      "durationInFrames": 300,
+      "from": 0,
+      "visual": {
+        "type": "pipeline",
+        "title": "A failing build",
+        "stages": [
+          {
+            "name": "Build",
+            "jobs": [
+              "Compile"
+            ]
+          },
+          {
+            "name": "Test",
+            "jobs": [
+              "Unit",
+              "Lint"
+            ],
+            "fail": true
+          },
+          {
+            "name": "Deploy",
+            "jobs": [
+              "Production"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "topic": "Fixture: deploy",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Fixture visual: deploy",
+      "visualDescription": "",
+      "audioFile": "silence.wav",
+      "durationInFrames": 300,
+      "from": 0,
+      "visual": {
+        "type": "deploy",
+        "title": "A canary release",
+        "strategy": "canary",
+        "instances": 4,
+        "from": "v1",
+        "to": "v2"
+      }
+    }
+  ]
+}

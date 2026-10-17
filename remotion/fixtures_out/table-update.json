@@ -1,0 +1,55 @@
+{
+  "topic": "Fixture: table-update",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Fixture visual: table-update",
+      "visualDescription": "",
+      "audioFile": "silence.wav",
+      "durationInFrames": 300,
+      "from": 0,
+      "visual": {
+        "type": "table",
+        "title": "Updating rows",
+        "name": "users",
+        "columns": [
+          "id",
+          "name",
+          "age"
+        ],
+        "rows": [
+          [
+            1,
+            "Ana",
+            31
+          ],
+          [
+            2,
+            "Bo",
+            25
+          ],
+          [
+            3,
+            "Cy",
+            40
+          ]
+        ],
+        "query": {
+          "kind": "update",
+          "set": {
+            "column": "age",
+            "value": 26
+          },
+          "where": {
+            "column": "name",
+            "op": "=",
+            "value": "Bo"
+          }
+        }
+      }
+    }
+  ]
+}

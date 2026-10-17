@@ -727,3 +727,93 @@ def test_gemini_planner_receives_scene_visual_direction(monkeypatch):
 
     assert "Visual direction:" in prompt
     assert "Illustrate solar tracking technology following the sun's path." in prompt
+
+
+def test_gemini_planner_accepts_registered_indexscan_visual(monkeypatch):
+    import json
+    from unittest.mock import patch
+
+    from app.graph.scene_planner import _call_gemini_planner
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    response_data = [
+        {
+            "concept": "Finding a row with an index",
+            "processKind": "database",
+            "visual": {
+                "type": "indexscan",
+                "title": "INDEX LOOKUP",
+                "values": [42, 7, 19, 88, 3, 56, 71, 25],
+                "target": 71,
+            },
+        }
+    ]
+
+    with (
+        patch("google.genai.Client") as client_class,
+        patch("google.genai.types.GenerateContentConfig"),
+    ):
+        client = client_class.return_value
+        client.models.generate_content.return_value.text = json.dumps(
+            response_data
+        )
+
+        result = _call_gemini_planner(
+            [
+                {
+                    "scene_number": 1,
+                    "narration": (
+                        "An index helps the database find a row "
+                        "without scanning every row."
+                    ),
+                }
+            ],
+            "How Database Indexes Make Queries Faster",
+        )
+
+    assert result[0] is not None
+    assert result[0]["visual"] == response_data[0]["visual"]
+
+def test_gemini_planner_prompt_guides_indexscan_selection(monkeypatch):
+    import json
+    from unittest.mock import patch
+
+    from app.graph.scene_planner import _call_gemini_planner
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    with (
+        patch("google.genai.Client") as client_class,
+        patch("google.genai.types.GenerateContentConfig") as config_class,
+    ):
+        client = client_class.return_value
+        client.models.generate_content.return_value.text = json.dumps([
+            {
+                "concept": "Finding a row using an index",
+                "processKind": "database",
+                "visual": {
+                    "type": "indexscan",
+                    "title": "INDEX LOOKUP",
+                    "values": [42, 7, 19, 88, 3, 56, 71, 25],
+                    "target": 71,
+                },
+            }
+        ])
+
+        _call_gemini_planner(
+            [{
+                "scene_number": 1,
+                "narration": (
+                    "An index helps the database find a row "
+                    "without scanning every row."
+                ),
+            }],
+            "How Database Indexes Make Queries Faster",
+        )
+
+        system_instruction = config_class.call_args.kwargs["system_instruction"]
+
+    assert '"indexscan"' in system_instruction
+    assert "without scanning every row" in system_instruction
+    assert "illustrative row IDs" in system_instruction

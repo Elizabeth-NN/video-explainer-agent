@@ -1,4 +1,4 @@
-/** Run: npx tsx src/visuals/systems.check.ts   (exits non-zero on failure) */
+/** Run: npx tsx src/visuals/systems_check.ts   (exits non-zero on failure) */
 import assert from "node:assert/strict";
 import {
   balancerTrace, cacheTrace, deployTrace, joinTrace, pipelineTrace, rangeLabels, replicationTrace,

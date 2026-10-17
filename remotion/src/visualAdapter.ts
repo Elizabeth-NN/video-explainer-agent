@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { LibrarySchema } from "./visuals";
 
 const zNode = z.object({
   label: z.string().min(1),
@@ -7,7 +8,7 @@ const zNode = z.object({
 });
 const base = { title: z.string().optional(), footnote: z.string().optional() };
 
-export const VisualSpecSchema = z.discriminatedUnion("type", [
+const CoreSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("flow"), ...base, nodes: z.array(zNode).min(2).max(4) }),
   z.object({
     type: z.literal("hub"), ...base, center: zNode,
@@ -56,3 +57,15 @@ export const VisualSpecSchema = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("illustration"), ...base, id: z.string(), focus: z.any().optional() }),
 ]);
+
+export const VisualSpecSchema = z.union([CoreSchema, LibrarySchema]);
+
+export const resolveVisual = (raw: unknown) => {
+  if (!raw) return null;
+  const parsed = VisualSpecSchema.safeParse(raw);
+  if (!parsed.success) {
+    console.warn("[visual] rejected:", JSON.stringify(parsed.error.issues[0]));
+    return null;
+  }
+  return parsed.data;
+};

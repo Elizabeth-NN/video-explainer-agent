@@ -1,0 +1,31 @@
+{
+  "topic": "Fixture: chain-list",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Fixture visual: chain-list",
+      "visualDescription": "",
+      "audioFile": "silence.wav",
+      "durationInFrames": 300,
+      "from": 0,
+      "visual": {
+        "type": "chain",
+        "title": "A queue",
+        "kind": "queue",
+        "values": [
+          1,
+          2,
+          3
+        ],
+        "ops": [
+          {
+            "op": "dequeue"
+          }
+        ]
+      }
+    }
+  ]
+}

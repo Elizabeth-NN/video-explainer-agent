@@ -38,6 +38,13 @@ JOINED_WORD_FIXES = {
     "circuitand": "circuit and",
     "assolar": "as solar",
     "arebroadly": "are broadly",
+    "tablewithout": "table without",
+    "ofdata": "of data",
+    "toquickly": "to quickly",
+    "indexcan": "index can",
+    "thespeed": "the speed",
+    "storagespace": "storage space",
+    "andsearch": "and search",
 }
 
 
@@ -99,6 +106,16 @@ TOPIC_CONCEPTS = {
         "earthquake rupture",
         "epicenter",
         "hypocenter",
+    },
+    "database index": {
+        "database index",
+        "database indexing",
+        "index scan",
+        "b-tree",
+        "b tree",
+        "table scan",
+        "index structure",
+        "indexed lookup",
     },
     "inflation": {
         "general price level",
@@ -302,6 +319,13 @@ def expand_research_queries(topic: str) -> list[str]:
             "Fault (geology)",
             "Plate tectonics",
             "Seismic wave",
+        ],
+        "database index": [
+            "Database index",
+            "Index (database)",
+            "B-tree",
+            "Database indexing",
+            "Index scan",
         ],
     }
 
@@ -936,6 +960,20 @@ Do not invent statistics, quotations, sources, or citations.
 The supplied sources may contain errors; do not claim they independently
 verify every fact.
 If evidence is insufficient, avoid unsupported details.
+Check the final script for missing spaces between words, accidental
+joined words, duplicated words, and awkward sentence boundaries.
+Use normal punctuation and a space between every separate word.
+Before returning, reread the complete script for formatting errors.
+Keep factual claims aligned with the supplied source summaries.
+For evidence screening, write each factual sentence using key terms and
+relationships explicitly present in at least one supplied source summary.
+Prefer clear, close paraphrases over broad analogies or decorative claims.
+Do not present an analogy as a factual claim about the topic.
+When critic feedback identifies limited word overlap, rewrite the flagged
+sentence using supported source wording or remove it; do not merely swap
+synonyms or repeat the same claim in different words.
+Avoid concluding restatements that introduce new claims.
+When revising, address each critic issue without inventing evidence.
 Return only the script, without a title or extra commentary.
 """.strip()
 
@@ -951,6 +989,12 @@ Return only the script, without a title or extra commentary.
         f"Topic: {state['topic']}\n\n"
         f"Research from Wikipedia:\n{evidence}\n\n"
         f"{revision_instructions}"
+        "For each sentence flagged for limited word overlap, either rewrite "
+        "it using wording and concepts traceable to one supplied source "
+        "summary, or remove it. Do not preserve a flagged analogy by merely "
+        "changing its wording. Keep the opening beginning with Imagine, but "
+        "make the hook itself evidence-aligned. Do not add unsupported "
+        "replacement claims. "
         "Write the explainer-video script using this evidence. "
         "If revising, correct the identified issues while keeping "
         "supported factual claims and following all script requirements."
@@ -981,8 +1025,9 @@ Return only the script, without a title or extra commentary.
             "Gemini returned an empty script. Try the request again."
         )
 
-    return {"script": script}
+    script = clean_research_text(script)
 
+    return {"script": script}
 
 def critic_node(state: VideoState) -> dict:
     """Check structure, topic coverage, and textual evidence overlap."""

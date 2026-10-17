@@ -1,0 +1,24 @@
+{
+  "topic": "Fixture: replication",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Fixture visual: replication",
+      "visualDescription": "",
+      "audioFile": "silence.wav",
+      "durationInFrames": 300,
+      "from": 0,
+      "visual": {
+        "type": "replication",
+        "title": "Async replication and failover",
+        "replicas": 2,
+        "mode": "async",
+        "writes": 3,
+        "failover": true
+      }
+    }
+  ]
+}

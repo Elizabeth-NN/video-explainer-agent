@@ -1,0 +1,49 @@
+{
+  "topic": "Fixture: exchange",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Fixture visual: exchange",
+      "visualDescription": "",
+      "audioFile": "silence.wav",
+      "durationInFrames": 300,
+      "from": 0,
+      "visual": {
+        "type": "exchange",
+        "title": "An HTTP request",
+        "actors": [
+          "Browser",
+          "Server",
+          "Database"
+        ],
+        "messages": [
+          {
+            "from": "Browser",
+            "to": "Server",
+            "label": "GET /profile"
+          },
+          {
+            "from": "Server",
+            "to": "Database",
+            "label": "SELECT user"
+          },
+          {
+            "from": "Database",
+            "to": "Server",
+            "label": "row",
+            "reply": true
+          },
+          {
+            "from": "Server",
+            "to": "Browser",
+            "label": "200 OK + HTML",
+            "reply": true
+          }
+        ]
+      }
+    }
+  ]
+}

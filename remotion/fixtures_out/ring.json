@@ -1,0 +1,34 @@
+{
+  "topic": "Fixture: ring",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Fixture visual: ring",
+      "visualDescription": "",
+      "audioFile": "silence.wav",
+      "durationInFrames": 300,
+      "from": 0,
+      "visual": {
+        "type": "ring",
+        "title": "Consistent hashing",
+        "nodes": [
+          "A",
+          "B",
+          "C"
+        ],
+        "keys": [
+          "user1",
+          "user2",
+          "user3",
+          "user4",
+          "user5",
+          "user6"
+        ],
+        "addNode": "D"
+      }
+    }
+  ]
+}

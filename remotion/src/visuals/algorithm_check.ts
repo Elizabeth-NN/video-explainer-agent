@@ -1,4 +1,4 @@
-/** Run: npx tsx src/visuals/algorithms.check.ts   (exits non-zero on failure) */
+/** Run: npx tsx src/visuals/algorithm_check.ts   (exits non-zero on failure) */
 import assert from "node:assert/strict";
 import {
   binarySearch, bubbleSort, buildBst, chainTrace, graphTrace, insertionSort,

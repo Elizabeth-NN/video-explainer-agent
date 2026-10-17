@@ -1230,3 +1230,71 @@ def test_earthquake_relevance_accepts_geology_sources():
         "Earthquake (film)",
         "A fictional film about a family and their personal problems.",
     )
+
+def test_expand_research_queries_for_database_indexes():
+    from app.graph.nodes import expand_research_queries
+
+    topic = "How Database Indexes Make Queries Faster"
+    queries = expand_research_queries(topic)
+
+    assert queries[0] == topic
+    assert "Database index" in queries
+    assert "Index (database)" in queries
+    assert "B-tree" in queries
+    assert "Database indexing" in queries
+    assert "Index scan" in queries
+    assert len(queries) == len({query.casefold() for query in queries})
+
+
+def test_database_index_relevance_accepts_index_sources():
+    topic = "How Database Indexes Make Queries Faster"
+
+    assert is_relevant_source(
+        topic,
+        "Database index",
+        "A database index is a data structure that speeds up data retrieval.",
+    )
+
+    assert is_relevant_source(
+        topic,
+        "B-tree",
+        "B-trees are tree data structures used to support database indexes "
+        "and efficient indexed lookup.",
+    )
+
+    assert is_relevant_source(
+        topic,
+        "Index scan",
+        "An index scan uses a database index to find matching rows.",
+    )
+
+
+def test_database_index_relevance_rejects_unrelated_index_topics():
+    topic = "How Database Indexes Make Queries Faster"
+
+    assert not is_relevant_source(
+        topic,
+        "Index (mathematics)",
+        "An index in mathematics can describe notation used for sequences "
+        "and tensor components.",
+    )
+
+
+
+def test_clean_research_text_repairs_database_spacing():
+    text = (
+        "tablewithout an index. "
+        "The speed ofdata retrieval lets you toquickly locate a row. "
+        "Indexcan help improve thespeed and storage space. "
+        "It supports full-text andsearch operations."
+    )
+
+    result = clean_research_text(text)
+
+    assert "table without" in result
+    assert "of data" in result
+    assert "to quickly" in result
+    assert "index can" in result
+    assert "the speed" in result
+    assert "storage space" in result
+    assert "and search" in result

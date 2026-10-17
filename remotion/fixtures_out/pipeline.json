@@ -1,0 +1,47 @@
+{
+  "topic": "Fixture: pipeline",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Fixture visual: pipeline",
+      "visualDescription": "",
+      "audioFile": "silence.wav",
+      "durationInFrames": 300,
+      "from": 0,
+      "visual": {
+        "type": "pipeline",
+        "title": "A CI/CD pipeline",
+        "stages": [
+          {
+            "name": "Build",
+            "jobs": [
+              "Compile"
+            ]
+          },
+          {
+            "name": "Test",
+            "jobs": [
+              "Unit",
+              "Lint"
+            ]
+          },
+          {
+            "name": "Package",
+            "jobs": [
+              "Docker image"
+            ]
+          },
+          {
+            "name": "Deploy",
+            "jobs": [
+              "Production"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

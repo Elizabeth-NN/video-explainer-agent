@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -15,12 +16,25 @@ WORDS_PER_MINUTE = 130
 MAX_WORDS_PER_SCENE = 32
 
 # ---------------------------------------------------------------------------
+# Load the planner catalog (written by `npx tsx src/visuals/export_catalog.ts`)
+# ---------------------------------------------------------------------------
+
+_CATALOG_PATH = Path(__file__).resolve().parents[3] / "planner_catalog.txt"
+try:
+    _PLANNER_CATALOG = _CATALOG_PATH.read_text("utf-8")
+except FileNotFoundError:
+    _PLANNER_CATALOG = ""
+    print(f"[visual-planner] WARNING: {_CATALOG_PATH} not found — library visuals disabled in prompt")
+
+# ---------------------------------------------------------------------------
 # Pydantic models – mirror the Zod VisualSpecSchema in remotion/src/visualAdapter.ts
 # ---------------------------------------------------------------------------
 
 ProcessKind = Literal[
     "transfer", "sequence", "cycle", "mechanism",
     "structure", "contrast", "quantity", "relationships",
+    "algorithm", "data-structure", "protocol", "architecture",
+    "operations", "database", "code",
 ]
 
 PROCESS_KIND_TO_VISUAL: dict[str, str] = {
@@ -32,6 +46,13 @@ PROCESS_KIND_TO_VISUAL: dict[str, str] = {
     "contrast": "comparison",
     "quantity": "bars",
     "relationships": "scene-graph",
+    "algorithm": "array",
+    "data-structure": "array",
+    "protocol": "exchange",
+    "architecture": "architecture",
+    "operations": "pipeline",
+    "database": "table",
+    "code": "code",
 }
 
 
@@ -185,9 +206,24 @@ class _SceneGraphSpec(BaseModel):
     groups: list[Any] | None = None
 
 
+_LIBRARY_TYPES = frozenset([
+    "array", "tree", "chain", "graph", "exchange", "code",
+    "architecture", "balancer", "ring", "cache",
+    "pipeline", "deploy",
+    "table", "join", "indexscan", "replication", "sharding",
+])
+
+
+class _LibrarySpec(BaseModel):
+    """Permissive pass-through for library visual types. Remotion's zod validates them."""
+    type: str
+    model_config = {"extra": "allow"}
+
+
 _VISUAL_UNION = (
     _FlowSpec | _HubSpec | _BarsSpec | _SequenceSpec | _CycleSpec
     | _LayersSpec | _AnatomySpec | _ComparisonSpec | _SceneGraphSpec
+    | _LibrarySpec
 )
 
 
@@ -201,61 +237,80 @@ class _PlannerSceneOutput(BaseModel):
 # Gemini visual planner
 # ---------------------------------------------------------------------------
 
-_PLANNER_SYSTEM = """
+_PLANNER_SYSTEM_BASE = """
 You are an educational visual planner. Given a scene's narration, you classify it
 and design one visual diagram for Remotion to render.
 
 For EACH scene, return JSON with exactly these fields:
 1. concept: the single idea this scene's narration teaches (one sentence).
-2. processKind: one of transfer | sequence | cycle | mechanism | structure | contrast | quantity | relationships
+2. processKind: one of transfer | sequence | cycle | mechanism | structure | contrast | quantity | relationships | algorithm | data-structure | protocol | architecture | operations | database | code
 3. visual: a spec of the matching type.
 
 Mapping (use the left side to pick the visual type):
-  transfer      → flow
-  sequence      → sequence
-  cycle         → cycle
-  mechanism     → layers
-  structure     → anatomy
-  contrast      → comparison
-  quantity      → bars
-  relationships → scene-graph   (LAST RESORT — every node needs x/y)
+  transfer       → flow
+  sequence       → sequence
+  cycle          → cycle
+  mechanism      → layers
+  structure      → anatomy
+  contrast       → comparison
+  quantity       → bars
+  relationships  → scene-graph   (LAST RESORT — every node needs x/y)
   hub is also valid for one thing with several inputs or outputs.
 
+processKind also accepts:
+  "algorithm"      – a named algorithm on data (array, tree, chain, graph)
+  "data-structure" – how a structure stores or changes data (array, tree, chain, graph, table)
+  "protocol"       – parties exchanging messages in order (exchange)
+  "architecture"   – how components are wired (architecture, balancer, ring, cache)
+  "operations"     – shipping and running software (pipeline, deploy)
+  "database"       – queries, indexes, replication, sharding (table, join, indexscan, replication, sharding)
+  "code"           – what a snippet does (code)
+
+Available library visuals (use EXACTLY these JSON shapes; the renderer validates them):
+{catalog}
+
 Rules:
+- Never write algorithm steps or query results. Supply inputs only; the renderer computes the steps.
 - Choose per scene from the concept. The video's overall topic is NOT a factor.
+- Do not use the same visual type for consecutive scenes unless the concept is genuinely the same.
 - Do NOT use the same visual type for consecutive scenes unless their processKind is genuinely the same.
 - Labels: max 3 words, UPPERCASE for node labels. Footnote: one factual sentence.
 - Only use facts from the narration. Never invent numbers.
+- Use a library visual only when the narration is actually about that concept. Otherwise use flow, hub, bars or scene-graph.
+- For narration explaining how a database index finds a target row without scanning every row, prefer the "indexscan" library visual. Use it only when that lookup-versus-scan concept is actually explained in the narration. Its values are illustrative row IDs, not factual measurements; choose 6-12 distinct integer IDs and make target one of those IDs.
 - Use cycle only when the narration describes a genuinely repeating process;
   movement or changing positions alone does not establish a cycle.
 - Use comparison only when the narration explicitly contrasts two things.
 - Every scene needs a title (max 6 words).
 - Icons must come from: sun, panel, cell, bolt, inverter, house, syringe, virus, immune, shield, antibody, rna, protein, gear, link, check, dot, heart, or be omitted.
 - Colors must be one of: teal, gold, red, purple, white.
+- code: put in `output` ONLY text the narration states. Never invent program output.
 
 Type constraints — follow these exact JSON shapes:
-- flow: {"type":"flow","title":"...","nodes":[{"label":"...","icon":"sun"},{"label":"...","icon":"panel"}]}
+- flow: {{"type":"flow","title":"...","nodes":[{{"label":"...","icon":"sun"}},{{"label":"...","icon":"panel"}}]}}
   Use 2-4 node objects, not strings.
-- hub: {"type":"hub","center":{"label":"...","icon":"dot"},"satellites":[{"label":"..."},{"label":"..."}]}
+- hub: {{"type":"hub","center":{{"label":"...","icon":"dot"}},"satellites":[{{"label":"..."}},{{"label":"..."}}]}}
   Use one center object and 2-6 satellite objects.
-- cycle: {"type":"cycle","title":"...","stages":[{"label":"MORNING POSITION"},{"label":"MIDDAY POSITION"},{"label":"EVENING POSITION"}]}
+- cycle: {{"type":"cycle","title":"...","stages":[{{"label":"MORNING POSITION"}},{{"label":"MIDDAY POSITION"}},{{"label":"EVENING POSITION"}}]}}
   Every stage MUST be an object containing a label. Never return stages as strings.
-- sequence: {"type":"sequence","title":"...","steps":[{"label":"STEP ONE","detail":"..."},{"label":"STEP TWO","detail":"..."}]}
+- sequence: {{"type":"sequence","title":"...","steps":[{{"label":"STEP ONE","detail":"..."}},{{"label":"STEP TWO","detail":"..."}}]}}
   Every step MUST be an object. Use 2-5 steps.
-- layers: {"type":"layers","title":"...","layers":[{"label":"TOP LAYER"},{"label":"BOTTOM LAYER"}]}
+- layers: {{"type":"layers","title":"...","layers":[{{"label":"TOP LAYER"}},{{"label":"BOTTOM LAYER"}}]}}
   Use 2-6 layer objects listed TOP TO BOTTOM. If carriers are used, fromLayer and toLayer are zero-based indexes.
-- anatomy: {"type":"anatomy","title":"...","subject":"block","parts":[{"label":"PART ONE","note":"..."},{"label":"PART TWO","note":"..."}]}
+- anatomy: {{"type":"anatomy","title":"...","subject":"block","parts":[{{"label":"PART ONE","note":"..."}},{{"label":"PART TWO","note":"..."}}]}}
   subject must be circle, capsule, block, or blob. Use 2-6 part objects.
-- comparison: {"type":"comparison","title":"...","left":{"heading":"...","points":["..."]},"right":{"heading":"...","points":["..."]}}
+- comparison: {{"type":"comparison","title":"...","left":{{"heading":"...","points":["..."]}},"right":{{"heading":"...","points":["..."]}}}}
   Each side needs a heading and 1-4 point strings.
-- bars: {"type":"bars","title":"...","bars":[{"label":"...","value":10},{"label":"...","value":20}]}
+- bars: {{"type":"bars","title":"...","bars":[{{"label":"...","value":10}},{{"label":"...","value":20}}]}}
   Use 2-6 bars. Each numeric value MUST exactly match a number explicitly stated in that scene's narration. Do not estimate, infer, invent, or use illustrative values. If the narration has no suitable explicit numbers, choose another visual type.
 - scene-graph: LAST RESORT only. Shape:
-  {"type":"scene-graph","title":"...","nodes":[{"id":"a","label":"A","x":200,"y":150},{"id":"b","label":"B","x":600,"y":150}],"links":[{"from":"a","to":"b","label":"..."}]}
+  {{"type":"scene-graph","title":"...","nodes":[{{"id":"a","label":"A","x":200,"y":150}},{{"id":"b","label":"B","x":600,"y":150}}],"links":[{{"from":"a","to":"b","label":"..."}}]}}
   Every node needs a unique id, x from 0-1000, and y from 0-430. The links array is REQUIRED and must be present, even if empty. Every link's from and to must reference node ids.
 - All nested nodes, stages, steps, layers, parts, bars, and links must be JSON objects with the required fields, not plain strings.
 - Never use illustration. If no valid visual can be designed from the narration, return visual as null.
 """.strip()
+
+_PLANNER_SYSTEM = _PLANNER_SYSTEM_BASE.format(catalog=_PLANNER_CATALOG if _PLANNER_CATALOG else "(catalog not available)")
 
 
 def _call_gemini_planner(
@@ -368,6 +423,15 @@ def _call_gemini_planner(
                                 "in the scene narration."
                             )
 
+                    validated_visual = validated.model_dump(
+                        exclude_none=True,
+                        by_alias=True,
+                    )
+
+                elif vtype in _LIBRARY_TYPES:
+                    # Library visuals have their own schemas in Remotion.
+                    # Preserve their complete specs for the Remotion adapter.
+                    validated = _LibrarySpec.model_validate(visual_dict)
                     validated_visual = validated.model_dump(
                         exclude_none=True,
                         by_alias=True,

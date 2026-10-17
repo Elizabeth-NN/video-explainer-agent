@@ -1,0 +1,35 @@
+{
+  "topic": "Fixture: chain",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Fixture visual: chain",
+      "visualDescription": "",
+      "audioFile": "silence.wav",
+      "durationInFrames": 300,
+      "from": 0,
+      "visual": {
+        "type": "chain",
+        "title": "A stack",
+        "kind": "stack",
+        "values": [
+          4,
+          7,
+          2
+        ],
+        "ops": [
+          {
+            "op": "pop"
+          },
+          {
+            "op": "push",
+            "value": 9
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-/** Run: npx tsx src/visuals/fixtures.check.ts
+/** Run: npx tsx src/visuals/fixtures_check.ts
  *  Every fixture AND every JSON example inside the planner hints must pass LibrarySchema,
  *  so the instructions Gemini sees can never drift from what Remotion accepts. */
 import assert from "node:assert/strict";

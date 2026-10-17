@@ -1,0 +1,31 @@
+{
+  "topic": "Fixture: array-search",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Fixture visual: array-search",
+      "visualDescription": "",
+      "audioFile": "silence.wav",
+      "durationInFrames": 300,
+      "from": 0,
+      "visual": {
+        "type": "array",
+        "title": "Binary search",
+        "values": [
+          3,
+          8,
+          12,
+          19,
+          25,
+          31,
+          42
+        ],
+        "algorithm": "binary-search",
+        "target": 25
+      }
+    }
+  ]
+}

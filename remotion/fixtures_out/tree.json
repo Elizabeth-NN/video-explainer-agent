@@ -1,0 +1,30 @@
+{
+  "topic": "Fixture: tree",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Fixture visual: tree",
+      "visualDescription": "",
+      "audioFile": "silence.wav",
+      "durationInFrames": 300,
+      "from": 0,
+      "visual": {
+        "type": "tree",
+        "title": "Inserting into a BST",
+        "values": [
+          8,
+          3,
+          10,
+          1,
+          6,
+          14,
+          4
+        ],
+        "algorithm": "insert"
+      }
+    }
+  ]
+}
