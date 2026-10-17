@@ -11,7 +11,12 @@ const backendOutput = path.join(
   "narration",
 );
 
-const manifestPath = path.join(backendOutput, "manifest.json");
+// Allow a specific narration manifest for testing or alternate output directories.
+const manifestPath = process.env.REMOTION_MANIFEST_PATH
+  ? path.resolve(projectRoot, process.env.REMOTION_MANIFEST_PATH)
+  : path.join(backendOutput, "manifest.json");
+
+const narrationOutput = path.dirname(manifestPath);
 const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
 
 // The topic and narration must come from the same generation.
@@ -67,7 +72,7 @@ for (const [index, scene] of manifest.scenes.entries()) {
     throw new Error(`Scene ${sceneNumber} has empty narration.`);
   }
 
-  const sourceAudio = path.join(backendOutput, audioFile);
+  const sourceAudio = path.join(narrationOutput, audioFile);
 
   // Check that this scene's audio exists before copying it.
   await readFile(sourceAudio);
@@ -95,7 +100,7 @@ await mkdir(publicAudio, { recursive: true });
 for (const scene of manifest.scenes) {
   const audioFile = scene.audio_file;
   await copyFile(
-    path.join(backendOutput, audioFile),
+    path.join(narrationOutput, audioFile),
     path.join(publicAudio, audioFile),
   );
 }

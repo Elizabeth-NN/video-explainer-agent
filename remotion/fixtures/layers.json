@@ -1,0 +1,34 @@
+{
+  "topic": "How a solar cell generates electricity",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "A solar cell is built from several layers: glass on top, n-type silicon, the p-n junction where the action happens, p-type silicon below it, and a metal contact at the base. Electrons freed at the junction flow toward the n-side creating current.",
+      "visualDescription": "Layers of a solar cell with electron carriers crossing the junction.",
+      "audioFile": "audio/scene_001.mp3",
+      "durationInFrames": 220,
+      "from": 0,
+      "concept": "A solar cell converts light to electricity via a semiconductor junction between stacked layers.",
+      "processKind": "mechanism",
+      "visual": {
+        "type": "layers",
+        "title": "Inside a Solar Cell",
+        "layers": [
+          { "label": "GLASS",         "note": "protective cover",          "color": "teal"   },
+          { "label": "N-TYPE SILICON", "note": "electron-rich layer",       "color": "gold"   },
+          { "label": "P-N JUNCTION",   "note": "where current is created",  "color": "gold"   },
+          { "label": "P-TYPE SILICON", "note": "hole-rich layer",           "color": "teal"   },
+          { "label": "METAL CONTACT",  "note": "collects the current",      "color": "purple" }
+        ],
+        "carriers": [
+          { "label": "e⁻", "fromLayer": 1, "toLayer": 2, "color": "gold" },
+          { "label": "e⁻", "fromLayer": 2, "toLayer": 3, "color": "gold" }
+        ],
+        "footnote": "Photons kick electrons across the junction, generating direct current."
+      }
+    }
+  ]
+}

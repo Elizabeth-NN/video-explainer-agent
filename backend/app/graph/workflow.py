@@ -29,6 +29,7 @@ def build_graph(
     checkpointer=None,
     use_llm: bool = False,
     use_semantic_graph: bool = False,
+    use_gemini_planner: bool = False,
 ):
     """Build the graph with either Gemini or the deterministic scriptwriter."""
     graph = StateGraph(VideoState)
@@ -44,6 +45,7 @@ def build_graph(
         lambda state: scene_planner_node(
             state,
             use_semantic_graph=use_semantic_graph,
+            use_gemini_planner=use_gemini_planner,
         ),
     )
     graph.add_node(

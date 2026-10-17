@@ -1,0 +1,28 @@
+{
+  "topic": "How electricity reaches a house",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Electricity is generated at a power plant, travels through transmission lines, passes through a substation, and arrives at your home ready to use.",
+      "visualDescription": "Flow of electricity from power plant to home.",
+      "audioFile": "audio/scene_001.mp3",
+      "durationInFrames": 180,
+      "from": 0,
+      "concept": "Electricity travels from its source to the consumer.",
+      "processKind": "transfer",
+      "visual": {
+        "type": "flow",
+        "title": "Power to Your Home",
+        "nodes": [
+          { "label": "POWER PLANT", "icon": "bolt", "color": "gold" },
+          { "label": "SUBSTATION", "icon": "gear", "color": "teal" },
+          { "label": "YOUR HOME", "icon": "house", "color": "teal" }
+        ],
+        "footnote": "High-voltage lines carry electricity long distances before stepping down."
+      }
+    }
+  ]
+}

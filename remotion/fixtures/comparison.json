@@ -1,0 +1,43 @@
+{
+  "topic": "Solar vs nuclear energy",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Solar power is renewable and has low running costs, but output depends on sunlight and storage is expensive. Nuclear power provides steady baseload output with no carbon emissions, but construction is costly and waste storage is a long-term challenge.",
+      "visualDescription": "Comparison of solar and nuclear energy.",
+      "audioFile": "audio/scene_001.mp3",
+      "durationInFrames": 220,
+      "from": 0,
+      "concept": "Solar and nuclear have different trade-offs around cost, reliability, and environmental impact.",
+      "processKind": "contrast",
+      "visual": {
+        "type": "comparison",
+        "title": "Solar vs Nuclear",
+        "left": {
+          "heading": "Solar",
+          "color": "gold",
+          "points": [
+            "Renewable fuel source",
+            "Low operating costs",
+            "Weather-dependent output",
+            "Expensive storage"
+          ]
+        },
+        "right": {
+          "heading": "Nuclear",
+          "color": "teal",
+          "points": [
+            "Steady baseload output",
+            "No direct CO₂ emissions",
+            "High construction cost",
+            "Long-lived waste"
+          ]
+        },
+        "footnote": "Both sources can contribute to a low-carbon electricity grid."
+      }
+    }
+  ]
+}

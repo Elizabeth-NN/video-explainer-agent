@@ -13,6 +13,8 @@ class Scene(TypedDict):
     visual_description: str
     duration_seconds: int
     visual: NotRequired[dict[str, Any]]
+    concept: NotRequired[str]
+    processKind: NotRequired[str]
 
 
 class VideoState(TypedDict):

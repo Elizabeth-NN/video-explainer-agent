@@ -1,0 +1,31 @@
+{
+  "topic": "How the Sun powers Earth",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "The Sun drives evaporation, photosynthesis, weather, and the water cycle — all from a single source.",
+      "visualDescription": "Hub showing Sun as the central energy driver.",
+      "audioFile": "audio/scene_001.mp3",
+      "durationInFrames": 180,
+      "from": 0,
+      "concept": "The Sun is the central energy source for multiple Earth processes.",
+      "processKind": "relationships",
+      "visual": {
+        "type": "hub",
+        "title": "Sun Powers Everything",
+        "direction": "out",
+        "center": { "label": "THE SUN", "icon": "sun", "color": "gold" },
+        "satellites": [
+          { "label": "EVAPORATION", "icon": "dot", "color": "teal" },
+          { "label": "PHOTOSYNTHESIS", "icon": "dot", "color": "teal" },
+          { "label": "WEATHER", "icon": "bolt", "color": "purple" },
+          { "label": "WATER CYCLE", "icon": "gear", "color": "teal" }
+        ],
+        "footnote": "Solar energy drives the major cycles and systems on Earth's surface."
+      }
+    }
+  ]
+}

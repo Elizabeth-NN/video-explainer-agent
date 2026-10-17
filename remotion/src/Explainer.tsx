@@ -1,4 +1,5 @@
 import React, { useMemo } from "react";
+import { VisualSpecSchema } from "./visualAdapter";
 import {
   AbsoluteFill,
   Audio,
@@ -76,7 +77,18 @@ export type VisualSpec =
         color?: string;
       }[];
       footnote?: string;
-    };
+    }
+  | { type: "sequence"; title?: string; steps: { label: string; detail?: string; icon?: IconName }[]; footnote?: string }
+  | { type: "cycle"; title?: string; stages: { label: string; color?: ColorName }[]; centerLabel?: string; footnote?: string }
+  | { type: "layers"; title?: string;
+      layers: { label: string; note?: string; color?: ColorName }[];   // listed TOP to BOTTOM
+      carriers?: { label: string; fromLayer: number; toLayer: number; color?: ColorName }[];
+      footnote?: string }
+  | { type: "anatomy"; title?: string; subject: "circle" | "capsule" | "block" | "blob";
+      parts: { label: string; note?: string }[]; footnote?: string }
+  | { type: "comparison"; title?: string;
+      left: { heading: string; points: string[]; color?: ColorName };
+      right: { heading: string; points: string[]; color?: ColorName }; footnote?: string };
 
 export type ExplainerScene = {
   sceneNumber: number;
@@ -86,6 +98,9 @@ export type ExplainerScene = {
   durationInFrames: number;
   from: number;
   visual?: VisualSpec;
+  /** Planner debug fields – renderer ignores these */
+  concept?: string;
+  processKind?: string;
 };
 
 export type ExplainerProps = {
@@ -117,6 +132,20 @@ const COLOR: Record<ColorName, string> = {
   red: C.red,
   purple: C.purple,
   white: C.white,
+};
+
+const COLOR_ALIASES: Record<string, ColorName> = {
+  green: "teal", blue: "teal", cyan: "teal", yellow: "gold", orange: "gold", pink: "red",
+};
+
+/** Returns a valid ColorName (or a hex string when asHex), else undefined so `?? "teal"` applies. */
+export const resolveColor = (raw: unknown, asHex: boolean): string | undefined => {
+  if (typeof raw !== "string") return undefined;
+  const k = raw.toLowerCase().trim();
+  const name = (k in COLOR ? k : COLOR_ALIASES[k]) as ColorName | undefined;
+  if (name) return asHex ? COLOR[name] : name;
+  if (asHex && /^#[0-9a-f]{3,8}$/i.test(k)) return k;
+  return undefined;
 };
 
 /** Frames of crossfade between scenes. */
@@ -160,6 +189,25 @@ const bezier = (a: Pt, c1: Pt, c2: Pt, b: Pt, p: number): Pt => {
 type IconProps = { c: string; t: number };
 
 const spokes = (n: number) => Array.from({ length: n }, (_, i) => (i * 360) / n);
+
+export const ICON_NAMES = Object.keys({
+  sun: 1, panel: 1, cell: 1, bolt: 1, inverter: 1, house: 1,
+  syringe: 1, virus: 1, immune: 1, shield: 1, antibody: 1,
+  rna: 1, protein: 1, gear: 1, link: 1, check: 1, dot: 1, heart: 1,
+} as Record<IconName, number>) as IconName[];
+
+const ICON_ALIASES: Record<string, IconName> = {
+  electricity: "bolt", power: "bolt", energy: "bolt", lightning: "bolt",
+  home: "house", building: "house", sunlight: "sun", light: "sun",
+  battery: "cell", storage: "cell", lungs: "immune", lung: "immune",
+  blood: "dot", valve: "gear", motor: "gear", engine: "gear", machine: "gear",
+  molecule: "protein", dna: "rna", germ: "virus", bacteria: "virus",
+};
+
+export const resolveIcon = (raw?: string): IconName => {
+  const k = (raw ?? "").toLowerCase().trim();
+  return ICON_NAMES.includes(k as IconName) ? (k as IconName) : ICON_ALIASES[k] ?? "dot";
+};
 
 const ICONS: Record<IconName, React.FC<IconProps>> = {
   heart: ({ c }) => (
@@ -345,8 +393,8 @@ const Node: React.FC<{
   labelPos?: "below" | "above";
 }> = ({ x, y, r, spec, delay, index, labelPos = "below" }) => {
   const { frame, t, s } = useT();
-  const col = COLOR[spec.color ?? "teal"];
-  const Icon = ICONS[spec.icon];
+  const col = COLOR[spec.color ?? "teal"] ?? C.teal;
+  const Icon = ICONS[resolveIcon(spec.icon)];
 
   const pop = stage(frame, delay, s(0.55));
   const ring = stage(frame, delay, s(0.9));
@@ -428,11 +476,272 @@ const Footnote: React.FC<{ text?: string; at: number }> = ({ text, at }) => {
   );
 };
 
+const wrap = (text: string, max: number, maxLines = 2): string[] => {
+  const lines: string[] = [];
+  let cur = "";
+  for (const w of text.split(/\s+/).filter(Boolean)) {
+    if (cur && (cur + " " + w).length > max) { lines.push(cur); cur = w; }
+    else cur = cur ? `${cur} ${w}` : w;
+  }
+  if (cur) lines.push(cur);
+  if (lines.length > maxLines) {
+    lines.length = maxLines;
+    lines[maxLines - 1] = lines[maxLines - 1].slice(0, Math.max(1, max - 1)) + "…";
+  }
+  return lines;
+};
+
 /* ──────────────────────────────────────────────────────────────
    Diagrams
    ────────────────────────────────────────────────────────────── */
 
 type Spec<T extends VisualSpec["type"]> = Extract<VisualSpec, { type: T }>;
+
+const ACCENTS = [C.teal, C.gold, C.purple, C.red];
+
+const CycleDiagram: React.FC<{ spec: Spec<"cycle"> }> = ({ spec }) => {
+  const { frame, s } = useT();
+  const cx = 500, cy = 215, rx = 290, ry = 125;
+  const n = spec.stages.length;
+  const pts = spec.stages.map((_, i) => {
+    const a = -Math.PI / 2 + (i / n) * Math.PI * 2;
+    return { x: cx + rx * Math.cos(a), y: cy + ry * Math.sin(a) };
+  });
+  return (
+    <>
+      {spec.centerLabel && (
+        <text x={cx} y={cy + 6} textAnchor="middle" fill={C.muted} fontSize="22" fontWeight="600"
+          opacity={stage(frame, 0, s(0.5))}>{spec.centerLabel}</text>
+      )}
+      {pts.map((p, i) => {
+        const q = pts[(i + 1) % n];
+        const prog = stage(frame, s(0.5) + i * s(0.35), s(0.4));
+        const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+        const ux = dx / len, uy = dy / len;
+        const x1 = p.x + ux * 48, y1 = p.y + uy * 48, x2 = q.x - ux * 56, y2 = q.y - uy * 56;
+        return (
+          <g key={`l${i}`} opacity={prog}>
+            <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={C.teal} strokeWidth="3" strokeLinecap="round" />
+            <path d={`M${x2 - ux * 10 - uy * 6} ${y2 - uy * 10 + ux * 6} L${x2} ${y2} L${x2 - ux * 10 + uy * 6} ${y2 - uy * 10 - ux * 6}`}
+              fill="none" stroke={C.teal} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+          </g>
+        );
+      })}
+      {spec.stages.map((st, i) => {
+        const p = stage(frame, s(0.2) + i * s(0.35), s(0.45));
+        const color = COLOR[st.color ?? "teal"];
+        return (
+          <g key={i} transform={`translate(${pts[i].x} ${pts[i].y}) scale(${0.85 + 0.15 * p})`} opacity={p}>
+            <circle r="44" fill={C.panel} stroke={color} strokeWidth="3" />
+            <text textAnchor="middle" y="6" fill={color} fontSize="22" fontWeight="700">{i + 1}</text>
+            <text textAnchor="middle" y="72" fill={color} fontSize="17" fontWeight="600">{st.label}</text>
+          </g>
+        );
+      })}
+      <Footnote text={spec.footnote} at={s(0.2) + n * s(0.35) + s(0.8)} />
+    </>
+  );
+};
+
+const LayersDiagram: React.FC<{ spec: Spec<"layers"> }> = ({ spec }) => {
+  const { frame, s } = useT();
+  const x0 = 120, w = 380, top = 40, h = Math.min(70, 340 / spec.layers.length);
+  const yMid = (i: number) => top + i * h + h / 2;
+  return (
+    <>
+      {spec.layers.map((l, i) => {
+        const p = stage(frame, s(0.2) + i * s(0.25), s(0.4));
+        const color = COLOR[l.color ?? "teal"];
+        return (
+          <g key={i} opacity={p}>
+            <rect x={x0} y={top + i * h} width={w} height={h - 4} rx="8"
+              fill={color} fillOpacity=".18" stroke={color} strokeWidth="2.5" />
+            <text x={x0 + w + 24} y={yMid(i) - 2} fill={color} fontSize="19" fontWeight="700">{l.label}</text>
+            {l.note && <text x={x0 + w + 24} y={yMid(i) + 18} fill={C.muted} fontSize="15">{l.note}</text>}
+          </g>
+        );
+      })}
+      {spec.carriers?.map((c, i) => {
+        const color = COLOR[c.color ?? "gold"];
+        const t = ((frame / s(1.6)) + i * 0.33) % 1;
+        const appear = stage(frame, s(0.2) + spec.layers.length * s(0.25) + s(0.3), s(0.4));
+        const y = yMid(c.fromLayer) + (yMid(c.toLayer) - yMid(c.fromLayer)) * t;
+        const x = x0 + 60 + i * 90;
+        return (
+          <g key={i} opacity={appear}>
+            <line x1={x} y1={yMid(c.fromLayer)} x2={x} y2={yMid(c.toLayer)} stroke={color} strokeOpacity=".35" strokeDasharray="6 6" />
+            <circle cx={x} cy={y} r="9" fill={color} />
+            <text x={x + 16} y={(yMid(c.fromLayer) + yMid(c.toLayer)) / 2} fill={color} fontSize="14" fontWeight="600">{c.label}</text>
+          </g>
+        );
+      })}
+      <Footnote text={spec.footnote} at={s(0.2) + spec.layers.length * s(0.25) + s(1.2)} />
+    </>
+  );
+};
+
+const SequenceDiagram: React.FC<{ spec: Spec<"sequence"> }> = ({ spec }) => {
+  const { frame, t, s } = useT();
+  const n = spec.steps.length;
+  const gap = 40;
+  const w = Math.min(200, (920 - gap * (n - 1)) / n);
+  const x0 = (1000 - (n * w + (n - 1) * gap)) / 2;
+  const y = 40, h = 290;
+  const step = s(0.4);
+  const revealEnd = s(0.2) + n * step + s(0.5);
+  const active = frame > revealEnd ? Math.floor((frame - revealEnd) / s(1.4)) % n : -1;
+
+  return (
+    <>
+      {spec.steps.map((st, i) => {
+        const p = stage(frame, s(0.2) + i * step, s(0.5));
+        const x = x0 + i * (w + gap);
+        const cx = x + w / 2;
+        const col = i === active ? C.gold : C.teal;
+        const Icon = st.icon ? ICONS[resolveIcon(st.icon)] : null;
+        const labelLines = wrap(st.label.toUpperCase(), Math.floor(w / 11), 2);
+        const labelY = Icon ? y + 150 : y + 100;
+        const detailLines = st.detail ? wrap(st.detail, Math.floor(w / 8), 3) : [];
+        const detailY = labelY + labelLines.length * 24 + 8;
+        return (
+          <g key={i} opacity={p} transform={`translate(0 ${(1 - p) * 14})`}>
+            <rect x={x} y={y} width={w} height={h} rx="16" fill={C.panel}
+              stroke={col} strokeWidth={i === active ? 4 : 2.5} />
+            <circle cx={cx} cy={y + 36} r="18" fill={col} fillOpacity=".2" stroke={col} strokeWidth="2.5" />
+            <text x={cx} y={y + 43} textAnchor="middle" fill={col} fontSize="20" fontWeight="700">{i + 1}</text>
+            {Icon && (
+              <g transform={`translate(${cx} ${y + 96}) scale(.7)`}><Icon c={col} t={t} /></g>
+            )}
+            {labelLines.map((ln, li) => (
+              <text key={li} x={cx} y={labelY + li * 24} textAnchor="middle"
+                fill={col} fontSize="19" fontWeight="700" letterSpacing="1">{ln}</text>
+            ))}
+            {detailLines.map((ln, li) => (
+              <text key={li} x={cx} y={detailY + li * 19} textAnchor="middle"
+                fill={C.muted} fontSize="15">{ln}</text>
+            ))}
+          </g>
+        );
+      })}
+      {spec.steps.slice(0, -1).map((_, i) => {
+        const ax = x0 + i * (w + gap) + w + gap / 2, ay = y + h / 2;
+        const p = stage(frame, s(0.2) + (i + 1) * step, s(0.4));
+        return (
+          <path key={`a${i}`} d={`M${ax - 6} ${ay - 11} L${ax + 6} ${ay} L${ax - 6} ${ay + 11}`}
+            fill="none" stroke={C.muted} strokeWidth="3.5" strokeLinecap="round"
+            strokeLinejoin="round" opacity={p} />
+        );
+      })}
+      <Footnote text={spec.footnote} at={revealEnd + s(0.3)} />
+    </>
+  );
+};
+
+const AnatomyDiagram: React.FC<{ spec: Spec<"anatomy"> }> = ({ spec }) => {
+  const { frame, t, s } = useT();
+  const cx = 500, cy = 205;
+  const base = stage(frame, 0, s(0.6));
+  const pulse = 1 + osc(t, 0.4, 0.012);
+  const half = Math.ceil(spec.parts.length / 2);
+  const groups = [
+    { side: "left" as const, parts: spec.parts.slice(0, half), offset: 0 },
+    { side: "right" as const, parts: spec.parts.slice(half), offset: half },
+  ];
+  const shape = { fill: C.teal, fillOpacity: 0.14, stroke: C.teal, strokeWidth: 3 };
+
+  const body = (() => {
+    switch (spec.subject) {
+      case "circle":
+        return <><circle r="100" {...shape} /><circle r="34" fill={C.gold} fillOpacity=".3" stroke={C.gold} strokeWidth="2.5" /></>;
+      case "capsule":
+        return <><rect x="-120" y="-60" width="240" height="120" rx="60" {...shape} />
+          <path d="M-60 0 H60" stroke={C.teal} strokeOpacity=".5" strokeWidth="2.5" strokeDasharray="6 6" /></>;
+      case "block":
+        return <><rect x="-100" y="-80" width="200" height="160" rx="16" {...shape} />
+          <rect x="-60" y="-44" width="120" height="88" rx="8" fill="none" stroke={C.teal} strokeOpacity=".5" strokeWidth="2.5" /></>;
+      default:
+        return <path d="M-90 -20 C-100 -70 -30 -100 20 -85 C80 -75 110 -30 95 20 C85 70 30 95 -25 88 C-80 80 -85 40 -90 -20 Z" {...shape} />;
+    }
+  })();
+
+  return (
+    <>
+      <g transform={`translate(${cx} ${cy}) scale(${(0.8 + 0.2 * base) * pulse})`} opacity={base}>
+        {body}
+      </g>
+      {groups.map(({ side, parts, offset }) =>
+        parts.map((part, k) => {
+          const idx = offset + k;
+          const col = ACCENTS[idx % ACCENTS.length];
+          const p = stage(frame, s(0.7) + idx * s(0.3), s(0.45));
+          const dir = side === "left" ? -1 : 1;
+          const py = 40 + (k + 0.5) * (340 / parts.length);
+          const tx = cx + dir * 55, ty = cy + (py - cy) * 0.4;
+          const noteLines = part.note ? wrap(part.note, 28, 2) : [];
+          return (
+            <g key={`${side}${k}`} opacity={p}>
+              <path d={`M${cx + dir * 222} ${py - 6} L${tx} ${ty}`} stroke={col} strokeWidth="2.5"
+                strokeLinecap="round" pathLength={1} strokeDasharray="1 1" strokeDashoffset={1 - p} />
+              <circle cx={tx} cy={ty} r="6" fill={col} />
+              <text x={cx + dir * 230} y={py} textAnchor={dir < 0 ? "end" : "start"}
+                fill={col} fontSize="19" fontWeight="700" letterSpacing="1">{part.label.toUpperCase()}</text>
+              {noteLines.map((ln, li) => (
+                <text key={li} x={cx + dir * 230} y={py + 22 + li * 18}
+                  textAnchor={dir < 0 ? "end" : "start"} fill={C.muted} fontSize="14">{ln}</text>
+              ))}
+            </g>
+          );
+        }),
+      )}
+      <Footnote text={spec.footnote} at={s(0.7) + spec.parts.length * s(0.3) + s(0.6)} />
+    </>
+  );
+};
+
+const ComparisonDiagram: React.FC<{ spec: Spec<"comparison"> }> = ({ spec }) => {
+  const { frame, s } = useT();
+  const W = 440, y = 25, H = 355;
+  const panels = [
+    { side: spec.left, x: 40, delay: s(0.2), fallback: "teal" as ColorName },
+    { side: spec.right, x: 520, delay: s(0.7), fallback: "gold" as ColorName },
+  ];
+  const vs = stage(frame, s(1.2), s(0.4));
+
+  return (
+    <>
+      {panels.map(({ side, x, delay, fallback }, k) => {
+        const col = COLOR[side.color ?? fallback];
+        const p = stage(frame, delay, s(0.5));
+        return (
+          <g key={k} opacity={p} transform={`translate(0 ${(1 - p) * 12})`}>
+            <rect x={x} y={y} width={W} height={H} rx="18" fill={col} fillOpacity=".08"
+              stroke={col} strokeWidth="2.5" />
+            <text x={x + W / 2} y={y + 50} textAnchor="middle" fill={col} fontSize="26"
+              fontWeight="700" letterSpacing="1">{side.heading.toUpperCase()}</text>
+            <path d={`M${x + 40} ${y + 66} H${x + W - 40}`} stroke={col} strokeOpacity=".4" strokeWidth="2" />
+            {side.points.slice(0, 4).map((pt, j) => {
+              const q = stage(frame, delay + s(0.4) + j * s(0.3), s(0.4));
+              const py = y + 105 + j * 62;
+              return (
+                <g key={j} opacity={q}>
+                  <circle cx={x + 30} cy={py - 6} r="6" fill={col} />
+                  {wrap(pt, 34, 2).map((ln, li) => (
+                    <text key={li} x={x + 48} y={py + li * 22} fill={C.white} fontSize="19">{ln}</text>
+                  ))}
+                </g>
+              );
+            })}
+          </g>
+        );
+      })}
+      <g opacity={vs}>
+        <circle cx="500" cy={y + H / 2} r="22" fill={C.bg} stroke={C.muted} strokeWidth="2.5" />
+        <text x="500" y={y + H / 2 + 6} textAnchor="middle" fill={C.muted} fontSize="17" fontWeight="700">VS</text>
+      </g>
+      <Footnote text={spec.footnote} at={s(2.2)} />
+    </>
+  );
+};
 
 const FlowDiagram: React.FC<{ spec: Spec<"flow"> }> = ({ spec }) => {
   const { s } = useT();
@@ -700,6 +1009,11 @@ const Diagram: React.FC<{ spec: VisualSpec; duration: number }> = ({ spec, durat
     {spec.type === "hub" && <HubDiagram spec={spec} />}
     {spec.type === "bars" && <BarsDiagram spec={spec} />}
     {spec.type === "scene-graph" && <SceneGraphDiagram spec={spec} />}
+    {spec.type === "sequence" && <SequenceDiagram spec={spec} />}
+    {spec.type === "cycle" && <CycleDiagram spec={spec} />}
+    {spec.type === "layers" && <LayersDiagram spec={spec} />}
+    {spec.type === "anatomy" && <AnatomyDiagram spec={spec} />}
+    {spec.type === "comparison" && <ComparisonDiagram spec={spec} />}
     {spec.type === "illustration" && (
       <Illustration id={spec.id} duration={duration} focus={spec.focus} footnote={spec.footnote} />
     )}
@@ -1125,9 +1439,44 @@ const heartSpecForScene = (scene: ExplainerScene): VisualSpec => {
   };
 };
 
-const resolveSpec = (scene: ExplainerScene, topic: string): VisualSpec => {
-  if (scene.visual) return scene.visual;
+const normalize = (spec: VisualSpec): VisualSpec => {
+  const hex = spec.type === "scene-graph"; // scene-graph takes raw CSS colors; others take color names
+  const walk = (v: any): any => {
+    if (Array.isArray(v)) return v.map(walk);
+    if (v && typeof v === "object") {
+      return Object.fromEntries(Object.entries(v).map(([k, val]) =>
+        k === "icon" ? [k, resolveIcon(val as string)]
+        : k === "color" ? [k, resolveColor(val, hex)]
+        : [k, walk(val)]));
+    }
+    return v;
+  };
+  const out = walk(spec) as VisualSpec;
+  if (out.type === "layers" && out.carriers) {
+    const n = out.layers.length;
+    out.carriers = out.carriers.filter(
+      (c) => c.fromLayer >= 0 && c.toLayer >= 0 && c.fromLayer < n && c.toLayer < n,
+    );
+  }
+  return out;
+};
 
+export const resolveVisual = (raw: unknown): VisualSpec | null => {
+  if (!raw) return null;
+  const parsed = VisualSpecSchema.safeParse(raw);
+  if (!parsed.success) {
+    console.warn("[visual] rejected:", parsed.error.issues[0]);
+    return null;
+  }
+  return normalize(parsed.data as VisualSpec);
+};
+
+const resolveSpec = (scene: ExplainerScene, topic: string): VisualSpec => {
+  const planned = resolveVisual(scene.visual);
+  if (planned) return planned;
+
+  console.warn(`[visual] scene ${scene.sceneNumber}: no valid planner visual, using legacy routing`);
+  // ── LEGACY: delete once planner output matches or beats it ──
   const sceneText = `${scene.narration} ${scene.visualDescription || ""}`;
   const pick = pickIllustration(topic, sceneText);
   if (pick) return { type: "illustration", ...pick };

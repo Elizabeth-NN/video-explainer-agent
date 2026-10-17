@@ -1,0 +1,30 @@
+{
+  "topic": "Parts of a cell",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Every animal cell has a nucleus that holds DNA, a cell membrane that controls what enters and leaves, mitochondria that generate energy, and a cytoplasm that fills the cell.",
+      "visualDescription": "Anatomy of a cell with labelled parts.",
+      "audioFile": "audio/scene_001.mp3",
+      "durationInFrames": 200,
+      "from": 0,
+      "concept": "Animal cells have four key structures: nucleus, membrane, mitochondria, and cytoplasm.",
+      "processKind": "structure",
+      "visual": {
+        "type": "anatomy",
+        "title": "Inside an Animal Cell",
+        "subject": "circle",
+        "parts": [
+          { "label": "Nucleus",      "note": "holds DNA"                  },
+          { "label": "Membrane",     "note": "controls entry and exit"    },
+          { "label": "Mitochondria", "note": "generates ATP energy"       },
+          { "label": "Cytoplasm",    "note": "gel-like cell interior"     }
+        ],
+        "footnote": "The nucleus is the largest organelle in most animal cells."
+      }
+    }
+  ]
+}

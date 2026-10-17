@@ -23,6 +23,16 @@ def main():
         help="Use Google's Gemini API to generate the script.",
     )
     parser.add_argument(
+        "--semantic-graphs",
+        action="store_true",
+        help="Use Gemini to extract semantic graphs for scene visuals.",
+    )
+    parser.add_argument(
+        "--visual-planner",
+        action="store_true",
+        help="Use Gemini to plan per-scene visuals (concept, processKind, visual spec).",
+    )
+    parser.add_argument(
         "--audio",
         action="store_true",
         help="Generate MP3 narration for an approved script.",
@@ -44,7 +54,11 @@ def main():
     )
 
     args = parser.parse_args()
-    graph = build_graph(use_llm=args.gemini)
+    graph = build_graph(
+        use_llm=args.gemini,
+        use_semantic_graph=args.semantic_graphs,
+        use_gemini_planner=args.visual_planner,
+    )
 
     initial_state = {
         "topic": args.topic,

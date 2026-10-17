@@ -3,11 +3,17 @@
 import json
 import logging
 import os
+from pathlib import Path
 from typing import Any
+
+from dotenv import load_dotenv
 
 from .scene_graph import validate_scene_graph
 
 logger = logging.getLogger(__name__)
+
+BACKEND_DIR = Path(__file__).resolve().parents[2]
+load_dotenv(BACKEND_DIR / ".env")
 
 
 def extract_semantic_graph(narration: str) -> dict[str, Any] | None:

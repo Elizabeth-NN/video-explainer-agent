@@ -1,0 +1,36 @@
+{
+  "topic": "How the internet routes data",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "When you send a request, it travels from your device to a local router, then through an internet exchange point, onward to a content delivery node, and finally to the destination server.",
+      "visualDescription": "Scene graph showing internet routing path.",
+      "audioFile": "audio/scene_001.mp3",
+      "durationInFrames": 200,
+      "from": 0,
+      "concept": "Internet traffic hops through several network nodes from source to destination.",
+      "processKind": "relationships",
+      "visual": {
+        "type": "scene-graph",
+        "title": "Internet Data Routing",
+        "nodes": [
+          { "id": "device",  "label": "YOUR DEVICE",  "x": 100, "y": 215, "size": 38, "color": "#4FD1C5", "appearAt": 0.20 },
+          { "id": "router",  "label": "LOCAL ROUTER", "x": 320, "y": 215, "size": 38, "color": "#F2B84B", "appearAt": 0.38 },
+          { "id": "ixp",     "label": "INTERNET EXP", "x": 550, "y": 100, "size": 38, "color": "#A78BFA", "appearAt": 0.56 },
+          { "id": "cdn",     "label": "CDN NODE",     "x": 750, "y": 330, "size": 38, "color": "#4FD1C5", "appearAt": 0.74 },
+          { "id": "server",  "label": "SERVER",       "x": 920, "y": 215, "size": 38, "color": "#F2B84B", "appearAt": 0.90 }
+        ],
+        "links": [
+          { "from": "device", "to": "router", "label": "sends",   "color": "#4FD1C5", "style": "solid", "appearAt": 0.40 },
+          { "from": "router", "to": "ixp",    "label": "routes",  "color": "#4FD1C5", "style": "solid", "appearAt": 0.52 },
+          { "from": "ixp",    "to": "cdn",    "label": "directs", "color": "#4FD1C5", "style": "solid", "appearAt": 0.64 },
+          { "from": "cdn",    "to": "server", "label": "reaches", "color": "#4FD1C5", "style": "solid", "appearAt": 0.76 }
+        ],
+        "footnote": "Packets may take different paths through the network on each request."
+      }
+    }
+  ]
+}

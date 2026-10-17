@@ -1,0 +1,30 @@
+{
+  "topic": "The water cycle",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Water evaporates from the surface, rises into the atmosphere, condenses into clouds, and falls back as precipitation.",
+      "visualDescription": "Cycle diagram of evaporation, condensation, precipitation, and runoff.",
+      "audioFile": "audio/scene_001.mp3",
+      "durationInFrames": 200,
+      "from": 0,
+      "concept": "Water circulates continuously through evaporation, condensation, and precipitation.",
+      "processKind": "cycle",
+      "visual": {
+        "type": "cycle",
+        "title": "The Water Cycle",
+        "centerLabel": "WATER",
+        "stages": [
+          { "label": "EVAPORATION",   "color": "gold" },
+          { "label": "CONDENSATION",  "color": "teal" },
+          { "label": "PRECIPITATION", "color": "purple" },
+          { "label": "RUNOFF",        "color": "teal" }
+        ],
+        "footnote": "Solar energy drives evaporation, completing the cycle continuously."
+      }
+    }
+  ]
+}

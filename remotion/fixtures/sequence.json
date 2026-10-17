@@ -1,0 +1,29 @@
+{
+  "topic": "How mRNA vaccines work",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "An mRNA vaccine works in four steps: delivery of mRNA into cells, protein production, immune recognition, and formation of memory.",
+      "visualDescription": "Sequence diagram of mRNA vaccine steps.",
+      "audioFile": "audio/scene_001.mp3",
+      "durationInFrames": 200,
+      "from": 0,
+      "concept": "mRNA vaccines train immunity through a four-step biological sequence.",
+      "processKind": "sequence",
+      "visual": {
+        "type": "sequence",
+        "title": "mRNA Vaccine Steps",
+        "steps": [
+          { "label": "DELIVERY",    "icon": "syringe", "detail": "mRNA enters your cells" },
+          { "label": "PRODUCTION",  "icon": "rna",     "detail": "Cells make spike protein" },
+          { "label": "RECOGNITION", "icon": "antibody","detail": "Immune system detects it" },
+          { "label": "MEMORY",      "icon": "shield",  "detail": "Antibodies are retained" }
+        ],
+        "footnote": "mRNA never enters the cell nucleus and is broken down after use."
+      }
+    }
+  ]
+}

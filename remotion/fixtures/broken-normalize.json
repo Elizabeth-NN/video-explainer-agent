@@ -1,0 +1,32 @@
+{
+  "topic": "How a solar cell generates electricity",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "A solar cell has several layers. Electrons carry charge across the p-n junction.",
+      "visualDescription": "Layers of a solar cell — deliberately broken spec to test normalize/resolveVisual.",
+      "audioFile": "audio/scene_001.mp3",
+      "durationInFrames": 200,
+      "from": 0,
+      "_comment": "BROKEN SPEC: icon 'battery' (unknown) → resolves to 'cell' via alias; color 'blue' → resolves to 'teal' via alias; carrier index 99 is out of range → filtered out by normalize",
+      "visual": {
+        "type": "layers",
+        "title": "Broken Spec Repair Test",
+        "layers": [
+          { "label": "GLASS",         "color": "blue"   },
+          { "label": "N-TYPE SILICON", "color": "blue"   },
+          { "label": "P-N JUNCTION",   "color": "yellow" },
+          { "label": "P-TYPE SILICON", "color": "green"  }
+        ],
+        "carriers": [
+          { "label": "e⁻", "fromLayer": 1, "toLayer": 2, "color": "blue" },
+          { "label": "INVALID", "fromLayer": 99, "toLayer": 99, "color": "red" }
+        ],
+        "footnote": "This spec has bad colors and an out-of-range carrier — all should be repaired silently."
+      }
+    }
+  ]
+}

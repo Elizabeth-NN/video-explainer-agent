@@ -1,0 +1,29 @@
+{
+  "topic": "Global renewable energy capacity",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "In 2023 solar had 1600 GW, wind 950 GW, and hydro 1400 GW of global installed capacity.",
+      "visualDescription": "Bar chart comparing renewable energy sources.",
+      "audioFile": "audio/scene_001.mp3",
+      "durationInFrames": 180,
+      "from": 0,
+      "concept": "Solar, wind and hydro each contribute hundreds of gigawatts worldwide.",
+      "processKind": "quantity",
+      "visual": {
+        "type": "bars",
+        "title": "Renewable Capacity (GW)",
+        "suffix": " GW",
+        "bars": [
+          { "label": "Solar", "value": 1600, "color": "gold" },
+          { "label": "Wind",  "value": 950,  "color": "teal" },
+          { "label": "Hydro", "value": 1400, "color": "purple" }
+        ],
+        "footnote": "Values are approximate 2023 estimates from IRENA."
+      }
+    }
+  ]
+}
