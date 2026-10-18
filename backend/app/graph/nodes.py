@@ -1562,11 +1562,27 @@ the relevant claims.
             "supplied research summaries."
         )
 
+        # Signal the workflow that this rejection may need more evidence.
+        # Preserve any categories and gaps reported by the deterministic critic.
+        existing_categories = baseline.get("critic_categories", [])
+        existing_gaps = baseline.get("research_gaps", [])
+
         return {
             "approved": False,
             "critique": (
                 f"{baseline.get('critique', '')} {feedback}"
             ).strip(),
+            "critic_categories": list(dict.fromkeys([
+                *existing_categories,
+                "unsupported_claims",
+            ])),
+            "research_gaps": list(dict.fromkeys([
+                *existing_gaps,
+                *issues,
+            ])) or [
+                "Gemini flagged potentially unsupported claims, "
+                "but did not identify specific claims to investigate."
+            ],
         }
 
     return {

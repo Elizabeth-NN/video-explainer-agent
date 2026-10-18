@@ -1,13 +1,15 @@
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from app.graph.nodes import (
     clean_research_text,
     critic_node,
+    gemini_critic_node,
     gemini_relevance_filter,
     is_relevant_source,
     research_node,
     revise_script_node,
+    tavily_research_node,
 )
 from app.graph.workflow import build_graph
 
@@ -430,6 +432,43 @@ def test_critic_approves_script_meeting_basic_checks():
     )
     assert "Research coverage is limited" in result["critique"]
 
+def test_gemini_critic_rejection_requests_additional_evidence():
+    state = initial_state(topic="How a process works")
+    state["script"] = (
+        "Imagine learning how a process works. "
+        + "This explanation describes the main steps and ideas. " * 12
+    )
+    source = {
+        "title": "Process explanation",
+        "url": "https://example.com/research",
+        "summary": (
+            "This explanation describes the main steps and ideas. "
+            "Learning how a process works involves understanding "
+            "the steps and ideas."
+        ),
+    }
+    state["research_sources"] = [source, source.copy()]
+    state["research_quality"] = "limited"
+
+    issue = (
+        "The script claims the process doubles output, "
+        "but the supplied summaries do not support that claim."
+    )
+
+    with patch(
+        "app.graph.nodes._gemini_json",
+        return_value={
+            "supported": False,
+            "issues": [issue],
+            "summary": "One claim lacks supporting evidence.",
+        },
+    ):
+        result = gemini_critic_node(state)
+
+    assert result["approved"] is False
+    assert "unsupported_claims" in result["critic_categories"]
+    assert issue in result["research_gaps"]
+    assert issue in result["critique"]
 
 def test_critic_flags_creative_opening_hook_with_limited_overlap():
     state = initial_state(
@@ -925,6 +964,107 @@ def test_graph_stops_when_research_is_insufficient():
     assert result["revision_count"] == 0
     assert "Research coverage is insufficient" in result["critique"]
 
+def test_gemini_evidence_gap_triggers_tavily_once_in_graph():
+    from app.graph.workflow import build_graph
+
+    script = (
+        "Imagine learning how a process works. "
+        + "This explanation describes the main steps and ideas. " * 12
+    )
+
+    research_sources = [
+        {
+            "title": "Process overview",
+            "url": "https://example.com/process",
+            "summary": "An overview of the process and its main steps.",
+        },
+        {
+            "title": "Process details",
+            "url": "https://example.com/details",
+            "summary": "Additional information about the process.",
+        },
+    ]
+
+    critic_calls = []
+    tavily_calls = []
+
+    def fake_writer(state):
+        return {"script": script}
+
+    def fake_critic(state):
+        critic_calls.append(state.get("tavily_used", False))
+
+        if len(critic_calls) == 1:
+            return {
+                "approved": False,
+                "critique": "A claim needs additional evidence.",
+                "critic_categories": ["unsupported_claims"],
+                "research_gaps": ["Evidence for the additional claim is missing."],
+            }
+
+        return {
+            "approved": True,
+            "critique": "The revised evidence review passed.",
+            "critic_categories": [],
+            "research_gaps": [],
+        }
+
+    def fake_tavily(state):
+        tavily_calls.append(True)
+        return {
+            "tavily_used": True,
+            "research_quality": "adequate",
+            "research_sources": [
+                *state["research_sources"],
+                {
+                    "title": "Additional evidence",
+                    "url": "https://example.com/additional",
+                    "summary": "Additional evidence about the process.",
+                },
+            ],
+            "research_notes": [
+                *state.get("research_notes", []),
+                "Additional evidence was retrieved.",
+            ],
+        }
+
+    with (
+        patch(
+            "app.graph.workflow.research_node",
+            return_value={
+                "research_quality": "adequate",
+                "research_sources": research_sources,
+                "research_notes": ["Initial process research."],
+            },
+        ),
+        patch(
+            "app.graph.workflow.gemini_scriptwriter_node",
+            side_effect=fake_writer,
+        ),
+        patch(
+            "app.graph.workflow.gemini_critic_node",
+            side_effect=fake_critic,
+        ),
+        patch(
+            "app.graph.workflow.tavily_research_node",
+            side_effect=fake_tavily,
+        ),
+        patch(
+            "app.graph.workflow.scene_planner_node",
+            return_value={},
+        ),
+    ):
+        result = build_graph(use_llm=True).invoke(
+            initial_state("How a process works")
+        )
+
+    assert len(tavily_calls) == 1
+    assert len(critic_calls) == 2
+    assert critic_calls[0] is False
+    assert critic_calls[1] is True
+    assert result["tavily_used"] is True
+    assert result["approved"] is True
+    assert len(result["research_sources"]) == 3
 
 def test_graph_approves_script_with_adequate_research():
     fake_research = {
@@ -1015,6 +1155,44 @@ def test_critic_rejects_insufficient_research_without_revision_loop():
     routed_state = {**state, **result}
     assert route_after_critique(routed_state) == "tavily"
     assert routed_state["revision_count"] == 0
+
+def test_gemini_evidence_gap_routes_to_tavily_once():
+    from app.graph.workflow import route_after_critique
+
+    state = initial_state(topic="How a process works")
+    state.update({
+        "approved": False,
+        "critic_categories": ["unsupported_claims"],
+        "research_quality": "adequate",
+        "research_sources": [
+            {"title": "Source A", "url": "https://example.com/a", "summary": "Evidence A"},
+            {"title": "Source B", "url": "https://example.com/b", "summary": "Evidence B"},
+        ],
+        "revision_count": 0,
+        "tavily_used": False,
+    })
+
+    assert route_after_critique(state) == "tavily"
+
+
+def test_gemini_evidence_gap_does_not_repeat_tavily():
+    from app.graph.workflow import route_after_critique
+
+    state = initial_state(topic="How a process works")
+    state.update({
+        "approved": False,
+        "critic_categories": ["unsupported_claims"],
+        "research_quality": "adequate",
+        "research_sources": [
+            {"title": "Source A", "url": "https://example.com/a", "summary": "Evidence A"},
+            {"title": "Source B", "url": "https://example.com/b", "summary": "Evidence B"},
+        ],
+        "revision_count": 0,
+        "tavily_used": True,
+    })
+
+    assert route_after_critique(state) == "revise"
+
 
 
 def test_critic_approves_limited_research_with_warning():
@@ -1345,3 +1523,135 @@ def test_clean_research_text_repairs_database_spacing():
     assert "the speed" in result
     assert "storage space" in result
     assert "and search" in result
+
+def test_tavily_fallback_merges_relevant_sources(monkeypatch):
+    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+
+    response = MagicMock()
+    response.json.return_value = {
+        "results": [
+            {
+                "title": "Vaccine immune response",
+                "url": "https://example.com/vaccine-response",
+                "content": (
+                    "Vaccines train the immune system to recognize "
+                    "pathogens and develop protective immunity."
+                ),
+            }
+        ]
+    }
+
+    state = {
+        "topic": "How vaccines work",
+        "research_notes": ["Existing research note"],
+        "research_sources": [
+            {
+                "title": "Vaccine",
+                "url": "https://example.com/vaccine",
+                "summary": (
+                    "Vaccines stimulate the immune system to "
+                    "recognize pathogens."
+                ),
+            },
+            {
+                "title": "Immune system",
+                "url": "https://example.com/immune-system",
+                "summary": (
+                    "The immune system recognizes pathogens "
+                    "and helps protect the body."
+                ),
+            },
+        ],
+        "research_quality": "limited",
+        "critique": "",
+        "research_gaps": [],
+    }
+
+    with patch(
+        "app.graph.nodes.requests.post",
+        return_value=response,
+    ) as mock_post:
+        result = tavily_research_node(state)
+
+    response.raise_for_status.assert_called_once()
+    mock_post.assert_called_once()
+
+    assert mock_post.call_args.args[0] == (
+        "https://api.tavily.com/search"
+    )
+    assert mock_post.call_args.kwargs["timeout"] == 15
+    assert (
+        mock_post.call_args.kwargs["json"]["api_key"]
+        == "test-key"
+    )
+    assert result["tavily_used"] is True
+    assert len(result["research_sources"]) == 3
+    assert result["research_quality"] == "adequate"
+    assert any(
+        source["title"] == "Vaccine immune response"
+        for source in result["research_sources"]
+    )
+
+
+def test_tavily_fallback_handles_missing_api_key(monkeypatch):
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+
+    state = {
+        "topic": "How vaccines work",
+        "research_notes": ["Existing note"],
+        "research_sources": [],
+        "research_quality": "insufficient",
+        "critique": "",
+    }
+
+    with patch("app.graph.nodes.requests.post") as mock_post:
+        result = tavily_research_node(state)
+
+    mock_post.assert_not_called()
+    assert result["tavily_used"] is True
+    assert "TAVILY_API_KEY" in result["critique"]
+    assert "research_sources" not in result
+
+
+def test_tavily_fallback_handles_network_failure(monkeypatch):
+    import requests
+
+    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+
+    state = {
+        "topic": "How vaccines work",
+        "research_notes": ["Existing note"],
+        "research_sources": [],
+        "research_quality": "insufficient",
+        "critique": "",
+    }
+
+    with patch(
+        "app.graph.nodes.requests.post",
+        side_effect=requests.RequestException("test failure"),
+    ) as mock_post:
+        result = tavily_research_node(state)
+
+    mock_post.assert_called_once()
+    assert result["tavily_used"] is True
+    assert "Tavily fallback failed" in result["critique"]
+    assert "research_sources" not in result
+
+
+def test_tavily_fallback_does_not_repeat_search(monkeypatch):
+    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+
+    state = {
+        "topic": "How vaccines work",
+        "research_notes": [],
+        "research_sources": [],
+        "research_quality": "insufficient",
+        "critique": "",
+        "tavily_used": True,
+    }
+
+    with patch("app.graph.nodes.requests.post") as mock_post:
+        result = tavily_research_node(state)
+
+    mock_post.assert_not_called()
+    assert result == {"tavily_used": True}
