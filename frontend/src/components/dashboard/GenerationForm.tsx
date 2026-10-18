@@ -47,12 +47,13 @@ export default function GenerationForm({ onGenerate, busy }: Props) {
           onChange={(event) => setTopic(event.target.value)}
           placeholder="e.g. How solar panels turn sunlight into electricity..."
           rows={4}
-          maxLength={500}
+          minLength={3}
+          maxLength={300}
           required
         />
         <div className="field-footnote">
           <span>Be specific for a more focused explanation.</span>
-          <span>{topic.length}/500</span>
+          <span>{topic.length}/300</span>
         </div>
 
         <div className="field-group">
