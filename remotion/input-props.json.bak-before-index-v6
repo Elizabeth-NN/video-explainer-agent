@@ -1,166 +1,214 @@
 {
-  "topic": "How Earthquakes Happen",
+  "topic": "How Database Indexes Make Queries Faster",
   "fps": 24,
   "width": 1280,
   "height": 720,
   "scenes": [
     {
       "sceneNumber": 1,
-      "narration": "Imagine the ground beneath your feet, which feels solid, is actually made of massive sections of Earth’s crust.",
-      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: Imagine the ground beneath your feet, which feels solid, is actually made of massive sections of Earth’s crust. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "narration": "Imagine searching through every single row in a database table just to find one specific piece of information.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: Imagine searching through every single row in a database table just to find one specific piece of information. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
       "visual": {
-        "type": "anatomy",
-        "title": "Earth's Crustal Sections",
-        "subject": "block",
-        "parts": [
-          {
-            "label": "SURFACE",
-            "note": "The ground we stand on."
-          },
-          {
-            "label": "CRUSTAL SECTIONS",
-            "note": "Massive solid segments of Earth."
-          }
+        "type": "table",
+        "name": "DATABASE TABLE",
+        "columns": [
+          "ID",
+          "DATA"
+        ],
+        "rows": [
+          [
+            1,
+            "A"
+          ],
+          [
+            2,
+            "B"
+          ],
+          [
+            3,
+            "C"
+          ],
+          [
+            4,
+            "D"
+          ]
         ]
       },
       "audioFile": "audio/scene_001.mp3",
-      "durationInFrames": 167,
+      "durationInFrames": 161,
       "from": 0
     },
     {
       "sceneNumber": 2,
-      "narration": "These sections are separated by fractures called faults.",
-      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: These sections are separated by fractures called faults. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "narration": "This process is slow and inefficient.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: This process is slow and inefficient. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "audioFile": "audio/scene_002.mp3",
+      "durationInFrames": 74,
+      "from": 161
+    },
+    {
+      "sceneNumber": 3,
+      "narration": "A database index is a data structure designed to improve the speed of data retrieval operations.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: A database index is a data structure designed to improve the speed of data retrieval operations. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
       "visual": {
-        "type": "scene-graph",
-        "title": "Faults as Boundaries",
-        "nodes": [
+        "type": "tree",
+        "values": [
+          50,
+          25,
+          75,
+          10,
+          30,
+          60,
+          90
+        ],
+        "algorithm": "none"
+      },
+      "audioFile": "audio/scene_003.mp3",
+      "durationInFrames": 146,
+      "from": 235
+    },
+    {
+      "sceneNumber": 4,
+      "narration": "By using an index, the system can quickly locate data without scanning every row in a table.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: By using an index, the system can quickly locate data without scanning every row in a table. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "visual": {
+        "type": "indexscan",
+        "values": [
+          10,
+          22,
+          35,
+          48,
+          51,
+          67,
+          89
+        ],
+        "target": 51
+      },
+      "audioFile": "audio/scene_004.mp3",
+      "durationInFrames": 149,
+      "from": 381
+    },
+    {
+      "sceneNumber": 5,
+      "narration": "You can create these indexes using one or more columns to enable rapid lookups and efficient access to ordered records.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: You can create these indexes using one or more columns to enable rapid lookups and efficient access to ordered records. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "visual": {
+        "type": "anatomy",
+        "title": "INDEXED COLUMN STRUCTURE",
+        "subject": "block",
+        "parts": [
           {
-            "id": "s1",
-            "label": "SECTION A",
-            "x": 200,
-            "y": 200
+            "label": "INDEX KEY",
+            "note": "The column used for sorting."
           },
           {
-            "id": "s2",
-            "label": "SECTION B",
-            "x": 800,
-            "y": 200
+            "label": "POINTER",
+            "note": "Reference to the actual row."
+          }
+        ]
+      },
+      "audioFile": "audio/scene_005.mp3",
+      "durationInFrames": 178,
+      "from": 530
+    },
+    {
+      "sceneNumber": 6,
+      "narration": "While indexes make searches faster, they require additional storage space and extra processing time whenever new data is added to the database.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: While indexes make searches faster, they require additional storage space and extra processing time whenever new data is added to the database. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "visual": {
+        "type": "comparison",
+        "title": "INDEX TRADE-OFFS",
+        "left": {
+          "heading": "BENEFITS",
+          "points": [
+            "Faster search queries",
+            "Efficient data access"
+          ]
+        },
+        "right": {
+          "heading": "COSTS",
+          "points": [
+            "Additional storage space",
+            "Slower write operations"
+          ]
+        }
+      },
+      "audioFile": "audio/scene_006.mp3",
+      "durationInFrames": 214,
+      "from": 708
+    },
+    {
+      "sceneNumber": 7,
+      "narration": "For full-text searches, an inverted index stores a mapping from words or numbers to their locations.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: For full-text searches, an inverted index stores a mapping from words or numbers to their locations. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "visual": {
+        "type": "table",
+        "name": "INVERTED INDEX",
+        "columns": [
+          "WORD",
+          "DOCUMENT_IDS"
+        ],
+        "rows": [
+          [
+            "APPLE",
+            "1, 3"
+          ],
+          [
+            "BANANA",
+            "2"
+          ],
+          [
+            "CHERRY",
+            "1, 2, 3"
+          ]
+        ]
+      },
+      "audioFile": "audio/scene_007.mp3",
+      "durationInFrames": 158,
+      "from": 922
+    },
+    {
+      "sceneNumber": 8,
+      "narration": "This structure is commonly used in search engines to allow fast information retrieval across large sets of documents.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: This structure is commonly used in search engines to allow fast information retrieval across large sets of documents. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "visual": {
+        "type": "architecture",
+        "nodes": [
+          {
+            "id": "u",
+            "label": "USER",
+            "kind": "client"
+          },
+          {
+            "id": "se",
+            "label": "SEARCH ENGINE",
+            "kind": "server"
+          },
+          {
+            "id": "idx",
+            "label": "INVERTED INDEX",
+            "kind": "database"
           }
         ],
         "links": [
           {
-            "from": "s1",
-            "to": "s2",
-            "label": "FAULT"
+            "from": "u",
+            "to": "se"
+          },
+          {
+            "from": "se",
+            "to": "idx"
           }
+        ],
+        "path": [
+          "u",
+          "se",
+          "idx"
         ]
       },
-      "audioFile": "audio/scene_002.mp3",
-      "durationInFrames": 94,
-      "from": 167
-    },
-    {
-      "sceneNumber": 3,
-      "narration": "Large faults are created by plate tectonic forces, often forming the boundaries where these massive plates meet.",
-      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: Large faults are created by plate tectonic forces, often forming the boundaries where these massive plates meet. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
-      "visual": {
-        "type": "layers",
-        "title": "Fault Formation",
-        "layers": [
-          {
-            "label": "TECTONIC FORCES"
-          },
-          {
-            "label": "PLATE BOUNDARY"
-          },
-          {
-            "label": "LARGE FAULT"
-          }
-        ]
-      },
-      "audioFile": "audio/scene_003.mp3",
-      "durationInFrames": 172,
-      "from": 261
-    },
-    {
-      "sceneNumber": 4,
-      "narration": "Most earthquakes happen when there is a sudden, rapid movement along these active faults, releasing a massive amount of energy.",
-      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: Most earthquakes happen when there is a sudden, rapid movement along these active faults, releasing a massive amount of energy. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
-      "visual": {
-        "type": "flow",
-        "title": "Earthquake Energy Release",
-        "nodes": [
-          {
-            "label": "RAPID MOVEMENT",
-            "icon": "bolt"
-          },
-          {
-            "label": "ENERGY RELEASE",
-            "icon": "sun"
-          }
-        ]
-      },
-      "audioFile": "audio/scene_004.mp3",
-      "durationInFrames": 185,
-      "from": 433
-    },
-    {
-      "sceneNumber": 5,
-      "narration": "While some faults move slowly, others can cause devastating events, like the 1700 Cascadia earthquake or the 2015 Nepal earthquake.",
-      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: While some faults move slowly, others can cause devastating events, like the 1700 Cascadia earthquake or the 2015 Nepal earthquake. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
-      "visual": {
-        "type": "comparison",
-        "title": "Fault Movement Types",
-        "left": {
-          "heading": "SLOW FAULTS",
-          "points": [
-            "Gradual movement",
-            "Low impact"
-          ]
-        },
-        "right": {
-          "heading": "DEVASTATING FAULTS",
-          "points": [
-            "1700 CASCADIA",
-            "2015 NEPAL"
-          ]
-        }
-      },
-      "audioFile": "audio/scene_005.mp3",
-      "durationInFrames": 225,
-      "from": 618
-    },
-    {
-      "sceneNumber": 6,
-      "narration": "Scientists measure the strength of these events using seismic magnitude scales, which analyze seismic waves recorded on a seismogram.",
-      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: Scientists measure the strength of these events using seismic magnitude scales, which analyze seismic waves recorded on a seismogram. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
-      "visual": {
-        "type": "layers",
-        "title": "Measuring Earthquake Strength",
-        "layers": [
-          {
-            "label": "SEISMOGRAM DATA"
-          },
-          {
-            "label": "SEISMIC WAVES"
-          },
-          {
-            "label": "MAGNITUDE SCALE"
-          }
-        ]
-      },
-      "audioFile": "audio/scene_006.mp3",
-      "durationInFrames": 200,
-      "from": 843
-    },
-    {
-      "sceneNumber": 7,
-      "narration": "By studying these waves and the history of past ruptures, experts work to better understand the geological processes occurring deep underground and the nature of the ground shaking that impacts our world.",
-      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: By studying these waves and the history of past ruptures, experts work to better understand the geological processes occurring deep underground and the nature of the ground shaking that impacts our world. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
-      "audioFile": "audio/scene_007.mp3",
-      "durationInFrames": 272,
-      "from": 1043
+      "audioFile": "audio/scene_008.mp3",
+      "durationInFrames": 176,
+      "from": 1080
     }
   ]
 }
