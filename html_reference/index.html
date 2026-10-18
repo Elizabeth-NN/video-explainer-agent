@@ -1,0 +1,487 @@
+<html>
+<head>
+    <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #F8FAFC;
+            color: #1E293B;
+        }
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #F1F5F9;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #CBD5E1;
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94A3B8;
+        }
+        .step-gradient {
+            background: linear-gradient(180deg, #3B82F6 0%, rgba(59, 130, 246, 0) 100%);
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(226, 232, 240, 1);
+        }
+        @keyframes pulse-blue {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(1.1); }
+        }
+        .animate-pulse-blue {
+            animation: pulse-blue 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+    </style>
+</head>
+<body class="h-screen w-full flex overflow-hidden">
+
+    <!-- Sidebar -->
+    <aside class="w-64 flex flex-col border-r border-[#E2E8F0] bg-white z-20">
+        <div class="p-6">
+            <div class="flex items-center gap-3 mb-10">
+                <div class="w-8 h-8 bg-gradient-to-br from-[#3B82F6] to-[#2563EB] rounded-lg flex items-center justify-center">
+                    <i class="ph-bold ph-video-camera text-white text-xl"></i>
+                </div>
+                <span class="font-bold text-lg tracking-tight text-[#0F172A]">Video Agent</span>
+            </div>
+
+            <nav class="space-y-1">
+                <button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg bg-[#3B82F6]/10 text-[#2563EB] font-medium transition-all">
+                    <i class="ph ph-plus-circle text-xl"></i>
+                    <span>New video</span>
+                </button>
+                <button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#64748B] hover:text-[#0F172A] hover:bg-[#F8FAFC] transition-all">
+                    <i class="ph ph-folders text-xl"></i>
+                    <span>My videos</span>
+                </button>
+                <button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#64748B] hover:text-[#0F172A] hover:bg-[#F8FAFC] transition-all">
+                    <i class="ph ph-activity text-xl"></i>
+                    <span>Workflow</span>
+                </button>
+                <button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#64748B] hover:text-[#0F172A] hover:bg-[#F8FAFC] transition-all">
+                    <i class="ph ph-gear-six text-xl"></i>
+                    <span>Settings</span>
+                </button>
+            </nav>
+        </div>
+
+        <div class="mt-auto p-6 space-y-4">
+            <div class="bg-[#F8FAFC] rounded-xl p-4 border border-[#E2E8F0]">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-xs font-semibold text-[#64748B] uppercase tracking-wider">Status</span>
+                    <div class="flex items-center gap-1.5">
+                        <div class="w-2 h-2 rounded-full bg-[#10B981]"></div>
+                        <span class="text-[10px] text-[#059669] font-medium uppercase">Online</span>
+                    </div>
+                </div>
+                <p class="text-xs text-[#64748B]">All systems are operational. Generation active.</p>
+            </div>
+
+            <div class="flex items-center gap-3 px-2">
+                <div class="w-9 h-9 rounded-full bg-[#F1F5F9] flex items-center justify-center border border-[#E2E8F0]">
+                    <span class="text-xs font-medium text-[#2563EB]">JD</span>
+                </div>
+                <div class="flex flex-col">
+                    <span class="text-sm font-medium text-[#0F172A]">Jane Doe</span>
+                    <span class="text-[10px] text-[#64748B]">Pro Account</span>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="flex-1 flex flex-col overflow-hidden bg-[#F8FAFC]">
+
+        <header class="h-16 border-b border-[#E2E8F0] flex items-center justify-between px-8 bg-white/80 backdrop-blur-md sticky top-0 z-10">
+            <div class="flex items-center gap-2 text-sm text-[#64748B]">
+                <span>Dashboard</span>
+                <i class="ph ph-caret-right text-xs"></i>
+                <span class="text-[#0F172A] font-medium">New Project</span>
+            </div>
+            <div class="flex items-center gap-4">
+                <button class="p-2 rounded-lg text-[#64748B] hover:bg-[#F1F5F9] transition-all">
+                    <i class="ph ph-bell text-xl"></i>
+                </button>
+                <button class="flex items-center gap-2 px-4 py-2 bg-white border border-[#E2E8F0] rounded-lg text-sm font-medium hover:bg-[#F8FAFC] text-[#0F172A] transition-all">
+                    <i class="ph ph-lightning text-[#F59E0B]"></i>
+                    <span>Upgrade</span>
+                </button>
+            </div>
+        </header>
+
+        <div class="flex-1 overflow-y-auto custom-scrollbar">
+            <div class="max-w-7xl mx-auto p-8 space-y-8">
+
+                <!-- Heading -->
+                <div>
+                    <h1 class="text-3xl font-bold text-[#0F172A] mb-2">Turn any topic into a visual story.</h1>
+                    <p class="text-[#475569] max-w-2xl">Leverage advanced AI to research, script, narrate, and render high-quality educational videos in minutes.</p>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+
+                    <!-- Left column: Generation form -->
+                    <div class="lg:col-span-7 space-y-6">
+                        <section class="bg-white border border-[#E2E8F0] rounded-2xl overflow-hidden shadow-sm">
+                            <div class="p-6 border-b border-[#E2E8F0] bg-[#F8FAFC]">
+                                <h2 class="font-semibold flex items-center gap-2 text-[#0F172A]">
+                                    <i class="ph ph-magic-wand text-[#3B82F6]"></i>
+                                    Generation Details
+                                </h2>
+                            </div>
+                            <div class="p-6 space-y-6">
+
+                                <div class="space-y-2">
+                                    <label class="text-sm font-medium text-[#475569]">What do you want to explain?</label>
+                                    <textarea class="w-full h-40 bg-[#F1F5F9] border border-[#E2E8F0] rounded-xl p-4 text-[#1E293B] focus:outline-none focus:border-[#3B82F6] focus:bg-white transition-all resize-none placeholder:text-[#94A3B8]" placeholder="Example: How black holes are formed and why they are so dense. Include details about the event horizon and singularity..."></textarea>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+                                    <div class="space-y-2">
+                                        <label class="text-sm font-medium text-[#475569]">AI Workflow Model</label>
+                                        <div class="flex p-1 bg-[#F1F5F9] rounded-lg border border-[#E2E8F0]">
+                                            <button class="flex-1 px-3 py-1.5 text-xs font-medium rounded-md bg-white text-[#0F172A] shadow-sm transition-all">Standard</button>
+                                            <button class="flex-1 px-3 py-1.5 text-xs font-medium rounded-md text-[#64748B] hover:text-[#475569] transition-all">Gemini Pro</button>
+                                        </div>
+                                    </div>
+
+                                    <div class="space-y-2">
+                                        <label class="text-sm font-medium text-[#475569]">Narration Voice</label>
+                                        <div class="relative">
+                                            <select class="w-full appearance-none bg-[#F1F5F9] border border-[#E2E8F0] rounded-lg px-4 py-2 text-sm text-[#1E293B] focus:outline-none focus:border-[#3B82F6] cursor-pointer">
+                                                <option selected>en-US-JennyNeural</option>
+                                                <option>en-US-GuyNeural</option>
+                                                <option>en-GB-SoniaNeural</option>
+                                                <option>en-AU-NatashaNeural</option>
+                                            </select>
+                                            <i class="ph ph-caret-down absolute right-3 top-1/2 -translate-y-1/2 text-[#64748B] pointer-events-none"></i>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="space-y-2">
+                                    <label class="text-sm font-medium text-[#475569]">Video Format</label>
+                                    <div class="flex gap-4">
+                                        <button class="flex-1 flex items-center justify-between p-4 bg-[#EFF6FF] border-2 border-[#3B82F6] rounded-xl transition-all">
+                                            <div class="flex items-center gap-3">
+                                                <div class="w-10 h-6 bg-[#CBD5E1] rounded-sm border border-[#94A3B8] flex items-center justify-center">
+                                                    <div class="w-8 h-4 bg-white/40"></div>
+                                                </div>
+                                                <div class="text-left">
+                                                    <p class="text-sm font-medium text-[#1E293B]">Landscape</p>
+                                                    <p class="text-[10px] text-[#64748B]">16:9 YouTube</p>
+                                                </div>
+                                            </div>
+                                            <i class="ph-fill ph-check-circle text-[#3B82F6] text-xl"></i>
+                                        </button>
+                                        <button class="flex-1 flex items-center gap-3 p-4 bg-[#F1F5F9] border border-[#E2E8F0] rounded-xl hover:bg-[#E2E8F0] transition-all">
+                                            <div class="w-6 h-10 bg-[#CBD5E1] rounded-sm border border-[#94A3B8] flex items-center justify-center">
+                                                <div class="w-4 h-8 bg-white/40"></div>
+                                            </div>
+                                            <div class="text-left">
+                                                <p class="text-sm font-medium text-[#64748B]">Vertical</p>
+                                                <p class="text-[10px] text-[#94A3B8]">9:16 TikTok/Reels</p>
+                                            </div>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="pt-4 space-y-4">
+                                    <button class="w-full py-4 bg-[#3B82F6] hover:bg-[#2563EB] text-white font-bold rounded-xl transition-all shadow-[0_4px_12px_rgba(59,130,246,0.25)] flex items-center justify-center gap-2 group">
+                                        <i class="ph-bold ph-sparkle transition-transform group-hover:scale-125"></i>
+                                        Generate Explainer Video
+                                    </button>
+                                    <div class="flex items-center gap-2 justify-center text-[11px] text-[#64748B]">
+                                        <i class="ph ph-info"></i>
+                                        <span>Generation usually takes 3-5 minutes depending on complexity.</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+
+                    <!-- Right column: Workflow + Preview -->
+                    <div class="lg:col-span-5 space-y-8">
+
+                        <!-- Workflow Progress -->
+                        <section class="bg-white border border-[#E2E8F0] rounded-2xl shadow-sm">
+                            <div class="p-6 border-b border-[#E2E8F0] flex items-center justify-between">
+                                <h2 class="font-semibold flex items-center gap-2 text-[#0F172A]">
+                                    <i class="ph ph-tree-structure text-[#D97706]"></i>
+                                    Workflow Progress
+                                </h2>
+                                <span class="text-xs font-mono text-[#B45309] px-2 py-1 bg-[#FEF3C7] rounded border border-[#FDE68A]">65% Complete</span>
+                            </div>
+
+                            <div class="p-6 space-y-6">
+
+                                <div class="w-full h-1.5 bg-[#F1F5F9] rounded-full overflow-hidden">
+                                    <div class="h-full bg-gradient-to-r from-[#3B82F6] to-[#D97706] rounded-full" style="width: 65%;"></div>
+                                </div>
+
+                                <div class="space-y-4 relative">
+
+                                    <div class="flex items-start gap-4">
+                                        <div class="mt-1 flex flex-col items-center">
+                                            <div class="w-6 h-6 rounded-full bg-[#D1FAE5] border border-[#10B981]/50 flex items-center justify-center text-[#059669] z-10">
+                                                <i class="ph-bold ph-check text-xs"></i>
+                                            </div>
+                                            <div class="w-0.5 h-8 bg-[#10B981]/20"></div>
+                                        </div>
+                                        <div>
+                                            <p class="text-sm font-medium text-[#0F172A]">Researching sources</p>
+                                            <p class="text-xs text-[#64748B]">Found 12 relevant academic papers and articles.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex items-start gap-4">
+                                        <div class="mt-1 flex flex-col items-center">
+                                            <div class="w-6 h-6 rounded-full bg-[#D1FAE5] border border-[#10B981]/50 flex items-center justify-center text-[#059669] z-10">
+                                                <i class="ph-bold ph-check text-xs"></i>
+                                            </div>
+                                            <div class="w-0.5 h-8 bg-[#10B981]/20"></div>
+                                        </div>
+                                        <div>
+                                            <p class="text-sm font-medium text-[#0F172A]">Writing the script</p>
+                                            <p class="text-xs text-[#64748B]">850 word script generated with educational tone.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex items-start gap-4">
+                                        <div class="mt-1 flex flex-col items-center">
+                                            <div class="w-6 h-6 rounded-full bg-[#DBEAFE] border border-[#3B82F6] flex items-center justify-center text-[#2563EB] z-10 animate-pulse-blue">
+                                                <div class="w-1.5 h-1.5 bg-[#3B82F6] rounded-full"></div>
+                                            </div>
+                                            <div class="w-0.5 h-8 bg-[#E2E8F0]"></div>
+                                        </div>
+                                        <div>
+                                            <p class="text-sm font-medium text-[#2563EB]">Reviewing and improving</p>
+                                            <p class="text-xs text-[#475569]">Enhancing clarity and checking factual accuracy...</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex items-start gap-4 opacity-50">
+                                        <div class="mt-1 flex flex-col items-center">
+                                            <div class="w-6 h-6 rounded-full bg-[#F1F5F9] border border-[#E2E8F0] flex items-center justify-center text-[#94A3B8] z-10">
+                                                <i class="ph ph-clock text-xs"></i>
+                                            </div>
+                                            <div class="w-0.5 h-8 bg-[#E2E8F0]"></div>
+                                        </div>
+                                        <div>
+                                            <p class="text-sm font-medium text-[#1E293B]">Planning scenes</p>
+                                            <p class="text-xs text-[#94A3B8]">Waiting for previous step...</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex items-start gap-4 opacity-50">
+                                        <div class="mt-1 flex flex-col items-center">
+                                            <div class="w-6 h-6 rounded-full bg-[#F1F5F9] border border-[#E2E8F0] flex items-center justify-center text-[#94A3B8] z-10">
+                                                <i class="ph ph-clock text-xs"></i>
+                                            </div>
+                                            <div class="w-0.5 h-8 bg-[#E2E8F0]"></div>
+                                        </div>
+                                        <div>
+                                            <p class="text-sm font-medium text-[#1E293B]">Generating narration</p>
+                                            <p class="text-xs text-[#94A3B8]">Waiting for previous step...</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex items-start gap-4 opacity-50">
+                                        <div class="mt-1 flex flex-col items-center">
+                                            <div class="w-6 h-6 rounded-full bg-[#F1F5F9] border border-[#E2E8F0] flex items-center justify-center text-[#94A3B8] z-10">
+                                                <i class="ph ph-clock text-xs"></i>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <p class="text-sm font-medium text-[#1E293B]">Rendering video</p>
+                                            <p class="text-xs text-[#94A3B8]">Final assembly and export...</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- System logs -->
+                                <div class="bg-[#F8FAFC] rounded-lg border border-[#E2E8F0] overflow-hidden">
+                                    <button class="w-full flex items-center justify-between px-4 py-2 bg-[#F1F5F9] text-[10px] font-mono text-[#64748B] uppercase tracking-widest">
+                                        <span>System logs</span>
+                                        <i class="ph ph-caret-up"></i>
+                                    </button>
+                                    <div class="p-3 h-24 overflow-y-auto font-mono text-[11px] space-y-1 text-[#64748B]">
+                                        <p><span class="text-[#059669]">[20:42:11]</span> Source validation successful.</p>
+                                        <p><span class="text-[#059669]">[20:42:15]</span> LLM context window prepared (4k tokens).</p>
+                                        <p><span class="text-[#059669]">[20:43:02]</span> Script generation draft v2 complete.</p>
+                                        <p><span class="text-[#3B82F6]">[20:43:45]</span> Analyzing script for visual cues...</p>
+                                        <p><span class="text-[#3B82F6]">[20:43:50]</span> Optimization pass 1/3 active...</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <!-- Video Preview -->
+                        <section class="bg-white border border-[#E2E8F0] rounded-2xl overflow-hidden shadow-sm">
+                            <div class="aspect-video bg-[#0F172A] flex items-center justify-center relative group">
+                                <div class="absolute inset-0 bg-gradient-to-t from-[#0F172A]/80 to-transparent"></div>
+                                <i class="ph-fill ph-play-circle text-6xl text-white/30 group-hover:text-white/60 transition-all cursor-pointer"></i>
+
+                                <div class="absolute bottom-4 left-4 right-4 flex items-center justify-between">
+                                    <div class="px-3 py-1 bg-black/60 rounded backdrop-blur text-[10px] font-medium text-white flex items-center gap-2">
+                                        <div class="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></div>
+                                        <span>GENERATING PREVIEW</span>
+                                    </div>
+                                    <div class="text-[10px] font-medium text-white/60">0:00 / 3:45</div>
+                                </div>
+                            </div>
+                            <div class="p-6 space-y-4">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <h3 class="font-semibold text-[#0F172A]">Quantum Computing Explained</h3>
+                                        <div class="flex items-center gap-3 mt-1">
+                                            <span class="text-[11px] text-[#64748B] flex items-center gap-1">
+                                                <i class="ph ph-monitor"></i> 16:9
+                                            </span>
+                                            <span class="text-[11px] text-[#64748B] flex items-center gap-1">
+                                                <i class="ph ph-clock"></i> ~4 min
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <button disabled class="px-4 py-2 bg-[#F1F5F9] text-[#94A3B8] rounded-lg text-sm font-medium cursor-not-allowed flex items-center gap-2">
+                                        <i class="ph ph-download-simple"></i>
+                                        Download
+                                    </button>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button class="flex-1 px-4 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs font-medium text-[#475569] hover:bg-[#F8FAFC] transition-all flex items-center justify-center gap-2">
+                                        <i class="ph ph-file-text"></i>
+                                        View Script
+                                    </button>
+                                    <button class="flex-1 px-4 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs font-medium text-[#475569] hover:bg-[#F8FAFC] transition-all flex items-center justify-center gap-2">
+                                        <i class="ph ph-link"></i>
+                                        View Sources
+                                    </button>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+
+                <!-- Recent Videos -->
+                <section class="pt-8">
+                    <div class="flex items-center justify-between mb-6">
+                        <h2 class="text-xl font-bold text-[#0F172A] flex items-center gap-2">
+                            <i class="ph ph-clock-counter-clockwise text-[#64748B]"></i>
+                            Recent Videos
+                        </h2>
+                        <button class="text-sm font-medium text-[#3B82F6] hover:underline">View all</button>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+
+                        <div class="bg-white border border-[#E2E8F0] rounded-xl overflow-hidden hover:border-[#3B82F6]/30 transition-all group">
+                            <div class="aspect-video bg-[#F1F5F9] relative overflow-hidden">
+                                <div class="absolute inset-0 bg-[#E2E8F0] flex items-center justify-center">
+                                    <i class="ph ph-image text-3xl text-[#94A3B8]"></i>
+                                </div>
+                                <div class="absolute top-2 right-2 px-2 py-0.5 bg-[#D1FAE5] text-[#059669] text-[10px] font-bold rounded border border-[#10B981]/30">COMPLETED</div>
+                                <div class="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                                    <button class="p-2 bg-white/80 hover:bg-white rounded-full text-[#0F172A] shadow-sm"><i class="ph-bold ph-play"></i></button>
+                                    <button class="p-2 bg-white/80 hover:bg-white rounded-full text-[#0F172A] shadow-sm"><i class="ph-bold ph-download-simple"></i></button>
+                                </div>
+                            </div>
+                            <div class="p-4">
+                                <h4 class="font-medium text-sm text-[#1E293B] truncate">How photosynthesis works</h4>
+                                <p class="text-[10px] text-[#64748B] mt-1">Oct 24, 2023 • 3:24 • 16:9</p>
+                            </div>
+                        </div>
+
+                        <div class="bg-white border border-[#E2E8F0] rounded-xl overflow-hidden hover:border-[#3B82F6]/30 transition-all group">
+                            <div class="aspect-video bg-[#F1F5F9] relative overflow-hidden">
+                                <div class="absolute inset-0 bg-[#E2E8F0] flex items-center justify-center">
+                                    <i class="ph ph-image text-3xl text-[#94A3B8]"></i>
+                                </div>
+                                <div class="absolute top-2 right-2 px-2 py-0.5 bg-[#FEF3C7] text-[#B45309] text-[10px] font-bold rounded border border-[#FDE68A]/30">DRAFT</div>
+                                <div class="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                    <button class="p-2 bg-white/80 hover:bg-white rounded-full text-[#0F172A] shadow-sm"><i class="ph-bold ph-pencil-simple"></i></button>
+                                </div>
+                            </div>
+                            <div class="p-4">
+                                <h4 class="font-medium text-sm text-[#1E293B] truncate">History of Rome: Part 1</h4>
+                                <p class="text-[10px] text-[#64748B] mt-1">Oct 22, 2023 • 5:12 • 16:9</p>
+                            </div>
+                        </div>
+
+                        <div class="bg-white border border-[#E2E8F0] rounded-xl overflow-hidden hover:border-[#3B82F6]/30 transition-all group">
+                            <div class="aspect-video bg-[#F1F5F9] relative overflow-hidden">
+                                <div class="absolute inset-0 bg-[#E2E8F0] flex items-center justify-center">
+                                    <i class="ph ph-image text-3xl text-[#94A3B8]"></i>
+                                </div>
+                                <div class="absolute top-2 right-2 px-2 py-0.5 bg-[#FEE2E2] text-[#DC2626] text-[10px] font-bold rounded border border-[#FECACA]/30">FAILED</div>
+                            </div>
+                            <div class="p-4">
+                                <h4 class="font-medium text-sm text-[#1E293B] truncate">Deep Sea Exploration</h4>
+                                <p class="text-[10px] text-[#64748B] mt-1">Oct 20, 2023 • 1:45 • 9:16</p>
+                            </div>
+                        </div>
+
+                        <div class="bg-white border border-[#E2E8F0] rounded-xl overflow-hidden hover:border-[#3B82F6]/30 transition-all group">
+                            <div class="aspect-video bg-[#F1F5F9] relative overflow-hidden">
+                                <div class="absolute inset-0 bg-[#E2E8F0] flex items-center justify-center">
+                                    <i class="ph ph-image text-3xl text-[#94A3B8]"></i>
+                                </div>
+                                <div class="absolute top-2 right-2 px-2 py-0.5 bg-[#D1FAE5] text-[#059669] text-[10px] font-bold rounded border border-[#10B981]/30">COMPLETED</div>
+                                <div class="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                                    <button class="p-2 bg-white/80 hover:bg-white rounded-full text-[#0F172A] shadow-sm"><i class="ph-bold ph-play"></i></button>
+                                    <button class="p-2 bg-white/80 hover:bg-white rounded-full text-[#0F172A] shadow-sm"><i class="ph-bold ph-download-simple"></i></button>
+                                </div>
+                            </div>
+                            <div class="p-4">
+                                <h4 class="font-medium text-sm text-[#1E293B] truncate">Intro to Web Development</h4>
+                                <p class="text-[10px] text-[#64748B] mt-1">Oct 18, 2023 • 2:50 • 16:9</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Empty state (shown when no videos exist) -->
+                    <div class="hidden mt-12 py-16 border-2 border-dashed border-[#E2E8F0] rounded-2xl flex-col items-center justify-center text-center space-y-4">
+                        <div class="w-16 h-16 bg-[#F1F5F9] rounded-full flex items-center justify-center text-[#94A3B8]">
+                            <i class="ph ph-video text-3xl"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-semibold text-[#0F172A]">No videos yet</h3>
+                            <p class="text-[#64748B] max-w-xs mx-auto">Start by entering a topic above to create your first AI-generated explainer video.</p>
+                        </div>
+                        <button class="px-6 py-2 bg-white border border-[#E2E8F0] rounded-lg text-sm font-medium text-[#1E293B] hover:bg-[#F8FAFC] transition-all">
+                            View Tutorial
+                        </button>
+                    </div>
+                </section>
+
+                <footer class="pt-12 pb-8 border-t border-[#E2E8F0] flex flex-col md:flex-row items-center justify-between gap-4">
+                    <p class="text-xs text-[#94A3B8]">© 2024 Video Explainer Agent AI. All rights reserved.</p>
+                    <div class="flex items-center gap-6">
+                        <a href="#" class="text-xs text-[#94A3B8] hover:text-[#475569]">Privacy Policy</a>
+                        <a href="#" class="text-xs text-[#94A3B8] hover:text-[#475569]">Terms of Service</a>
+                        <a href="#" class="text-xs text-[#94A3B8] hover:text-[#475569]">API Documentation</a>
+                    </div>
+                </footer>
+            </div>
+        </div>
+    </main>
+
+    <!-- Mobile menu button -->
+    <button class="lg:hidden fixed bottom-6 right-6 w-14 h-14 bg-[#3B82F6] rounded-full shadow-lg flex items-center justify-center text-white z-50">
+        <i class="ph-bold ph-list text-2xl"></i>
+    </button>
+
+</body>
+</html>

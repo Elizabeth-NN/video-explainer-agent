@@ -65,3 +65,4 @@ remotion/input-props.json
 remotion/out/
 # Local backup files
 *.bak
+/backend/models/kokoro/
