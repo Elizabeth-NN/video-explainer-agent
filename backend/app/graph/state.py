@@ -27,3 +27,6 @@ class VideoState(TypedDict):
     approved: bool
     revision_count: int
     scenes: list[Scene]
+    critic_categories: NotRequired[list[str]]
+    research_gaps: NotRequired[list[str]]
+    tavily_used: NotRequired[bool]

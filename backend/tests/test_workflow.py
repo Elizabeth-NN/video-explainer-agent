@@ -907,6 +907,15 @@ def test_graph_stops_when_research_is_insufficient():
                 "The graph must not revise with insufficient research."
             ),
         ),
+        patch(
+            "app.graph.workflow.tavily_research_node",
+            side_effect=lambda state: {
+                "tavily_used": True,
+                "research_quality": "insufficient",
+                "research_sources": state.get("research_sources", []),
+                "research_notes": state.get("research_notes", []),
+            },
+        ),
     ):
         result = build_graph().invoke(
             initial_state("How a process works")
@@ -1004,7 +1013,7 @@ def test_critic_rejects_insufficient_research_without_revision_loop():
     assert "Research coverage is insufficient" in result["critique"]
 
     routed_state = {**state, **result}
-    assert route_after_critique(routed_state) == "insufficient_research"
+    assert route_after_critique(routed_state) == "tavily"
     assert routed_state["revision_count"] == 0
 
 

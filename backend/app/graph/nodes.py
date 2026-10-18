@@ -791,6 +791,115 @@ def research_node(state: VideoState) -> dict:
             "Check your internet connection and try again."
         ) from exc
 
+def tavily_research_node(state: VideoState) -> dict:
+    """Attempt one bounded Tavily search to fill a research evidence gap."""
+    if state.get("tavily_used", False):
+        return {"tavily_used": True}
+
+    # Mark the attempt before any operation so later graph routes cannot
+    # repeat the search if Tavily fails or its key is unavailable.
+    result = {"tavily_used": True}
+    api_key = os.getenv("TAVILY_API_KEY")
+
+    if not api_key:
+        result["critique"] = (
+            f"{state.get('critique', '')} "
+            "Tavily fallback was unavailable because TAVILY_API_KEY "
+            "is not configured."
+        ).strip()
+        return result
+
+    topic = state.get("topic", "").strip()
+    gaps = state.get("research_gaps") or []
+
+    # Keep the query short. Do not submit the entire script.
+    query = topic
+    if gaps:
+        first_gap = " ".join(str(gaps[0]).split())[:160]
+        if first_gap:
+            query = f"{topic} {first_gap}"
+
+    try:
+        response = requests.post(
+            "https://api.tavily.com/search",
+            json={
+                "api_key": api_key,
+                "query": query,
+                "search_depth": "basic",
+                "max_results": 5,
+                "include_answer": False,
+            },
+            timeout=15,
+        )
+        response.raise_for_status()
+        payload = response.json()
+
+        if not isinstance(payload, dict):
+            raise ValueError("Unexpected Tavily response format.")
+
+        results = payload.get("results", [])
+        if not isinstance(results, list):
+            results = []
+
+        tavily_sources = []
+        for item in results:
+            if not isinstance(item, dict):
+                continue
+
+            title = item.get("title")
+            url = item.get("url")
+            summary = item.get("content") or item.get("raw_content")
+
+            if not all(
+                isinstance(value, str) and value.strip()
+                for value in (title, url, summary)
+            ):
+                continue
+
+            if not is_relevant_source(topic, title, summary):
+                continue
+
+            tavily_sources.append({
+                "title": title.strip(),
+                "url": url.strip(),
+                "summary": clean_research_text(summary),
+            })
+
+        # Preserve Wikipedia sources and remove duplicate or malformed
+        # results using the existing source validation helper.
+        combined = deduplicate_valid_sources([
+            *state.get("research_sources", []),
+            *tavily_sources,
+        ])
+
+        if not combined:
+            result["critique"] = (
+                f"{state.get('critique', '')} "
+                "Tavily did not provide any additional usable research "
+                "sources."
+            ).strip()
+            return result
+
+        result.update({
+            "research_sources": combined,
+            "research_notes": [
+                f"{source['title']}: {source['summary']}"
+                for source in combined
+            ],
+            "research_quality": classify_research_quality(len(combined)),
+        })
+
+        return result
+
+    except (requests.RequestException, ValueError, TypeError) as exc:
+        # A failed fallback should not crash the workflow. Keep the
+        # existing evidence and allow the graph to decide what happens next.
+        result["critique"] = (
+            f"{state.get('critique', '')} "
+            f"Tavily fallback failed ({type(exc).__name__}); "
+            "the existing research was retained."
+        ).strip()
+        return result
 
 # ---------------------------------------------------------------------------
 # Script writing
@@ -1088,17 +1197,21 @@ def critic_node(state: VideoState) -> dict:
     topic = state["topic"].strip()
     words = script.split()
     issues = []
+    critic_categories = []
+    research_gaps = []
 
     if not script.startswith("Imagine"):
         issues.append(
             "Start with a curiosity-driven hook beginning with 'Imagine'."
         )
+        critic_categories.append("structure")
 
     if not 80 <= len(words) <= 180:
         issues.append(
             f"The script must contain 80-180 words; it currently has "
             f"{len(words)}."
         )
+        critic_categories.append("structure")
 
     sources = state.get("research_sources", [])
     research_quality = state.get("research_quality", "unknown")
@@ -1110,6 +1223,11 @@ def critic_node(state: VideoState) -> dict:
             "sources are available. Additional research is required "
             "before this script can be approved."
         )
+        critic_categories.append("research_gap")
+        research_gaps.append(
+            "Research coverage is insufficient: fewer than two relevant "
+            "sources are available."
+        )
     elif research_quality == "limited":
         research_warning = (
             "Research coverage is limited; verify key claims against "
@@ -1120,11 +1238,18 @@ def critic_node(state: VideoState) -> dict:
         issues.append(
             "At least one research source is required before approval."
         )
+        if "research_gap" not in critic_categories:
+            critic_categories.append("research_gap")
+        research_gaps.append(
+            "No research sources are available to support the script."
+        )
 
     if len(words) < 10:
         issues.append(
             "The script needs enough meaningful content to explain the topic."
         )
+        if "structure" not in critic_categories:
+            critic_categories.append("structure")
 
     lower_script = script.lower()
     disclaimer_phrases = (
@@ -1139,6 +1264,7 @@ def critic_node(state: VideoState) -> dict:
             "Replace research disclaimers with a substantive explanation "
             "of the topic."
         )
+        critic_categories.append("style")
 
     stopwords = {
         "about", "after", "again", "also", "and", "are", "because",
@@ -1174,6 +1300,7 @@ def critic_node(state: VideoState) -> dict:
         issues.append(
             "The script does not clearly cover the requested topic."
         )
+        critic_categories.append("topic_coverage")
 
     # Per-video learning objectives come from the research plan, not from
     # topic-specific branches. A concept counts as covered when any of its
@@ -1183,7 +1310,10 @@ def critic_node(state: VideoState) -> dict:
         missing_concepts = [
             item["concept"]
             for item in required_concepts
-            if not any(keyword in lower_script for keyword in item["keywords"])
+            if not any(
+                keyword in lower_script
+                for keyword in item["keywords"]
+            )
         ]
         covered_count = len(required_concepts) - len(missing_concepts)
         needed = math.ceil(len(required_concepts) * MIN_CONCEPT_COVERAGE)
@@ -1193,6 +1323,15 @@ def critic_node(state: VideoState) -> dict:
                 "The script does not yet explain these planned concepts: "
                 + "; ".join(missing_concepts)
                 + ". Cover them only where the sources support them."
+            )
+            critic_categories.append("concept_coverage")
+
+            # Record concept gaps separately. They may need better writing,
+            # more research, or both; they do not automatically prove that
+            # additional web research is necessary.
+            research_gaps.extend(
+                f"Planned concept needs coverage: {concept}"
+                for concept in missing_concepts
             )
 
     sentences = [
@@ -1266,6 +1405,9 @@ def critic_node(state: VideoState) -> dict:
         )
 
     if unsupported:
+        critic_categories.append("unsupported_claims")
+        research_gaps.extend(unsupported[:5])
+
         examples = " ".join(unsupported[:2])
         issues.append(
             f"{len(unsupported)} substantive sentence(s) have limited "
@@ -1274,15 +1416,24 @@ def critic_node(state: VideoState) -> dict:
             f"approval. Example: {examples}"
         )
 
+    # Keep category names unique while preserving their original order.
+    critic_categories = list(dict.fromkeys(critic_categories))
+
+    # Remove duplicate gap messages without changing their order.
+    research_gaps = list(dict.fromkeys(research_gaps))
+
     if issues:
         critique = " ".join(issues)
         if research_warning:
             critique = f"{critique} {research_warning}"
         if evidence_warning:
             critique = f"{critique} {evidence_warning}"
+
         return {
             "critique": critique,
             "approved": False,
+            "critic_categories": critic_categories,
+            "research_gaps": research_gaps,
         }
 
     critique = (
@@ -1304,7 +1455,10 @@ def critic_node(state: VideoState) -> dict:
     return {
         "critique": critique,
         "approved": True,
+        "critic_categories": critic_categories,
+        "research_gaps": research_gaps,
     }
+
 def gemini_critic_node(state: VideoState) -> dict:
     """Add an evidence-focused Gemini review to the deterministic critic.
 
