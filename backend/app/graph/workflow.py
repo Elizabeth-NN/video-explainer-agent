@@ -4,6 +4,7 @@ from langgraph.graph import END, START, StateGraph
 from app.graph.scene_planner import scene_planner_node
 from app.graph.nodes import (
     critic_node,
+    gemini_critic_node,
     gemini_scriptwriter_node,
     research_node,
     revise_script_node,
@@ -37,9 +38,10 @@ def build_graph(
     graph.add_node("research", research_node)
 
     writer = gemini_scriptwriter_node if use_llm else scriptwriter_node
-    graph.add_node("scriptwriter", writer)
+    critic = gemini_critic_node if use_llm else critic_node
 
-    graph.add_node("critic", critic_node)
+    graph.add_node("scriptwriter", writer)
+    graph.add_node("critic", critic)
     graph.add_node(
         "scene_planner",
         lambda state: scene_planner_node(

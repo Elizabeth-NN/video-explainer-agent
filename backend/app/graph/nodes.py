@@ -1305,6 +1305,124 @@ def critic_node(state: VideoState) -> dict:
         "critique": critique,
         "approved": True,
     }
+def gemini_critic_node(state: VideoState) -> dict:
+    """Add an evidence-focused Gemini review to the deterministic critic.
+
+    Gemini compares the script with supplied research summaries. It does
+    not independently verify the truth of those summaries.
+    """
+    baseline = critic_node(state)
+
+    # Preserve deterministic rejection for structural or evidence-overlap
+    # failures. Gemini is an additional check, not a replacement.
+    if not baseline.get("approved", False):
+        return baseline
+
+    sources = state.get("research_sources", [])
+    script = (state.get("script") or "").strip()
+
+    if not sources or not script:
+        return {
+            **baseline,
+            "critique": (
+                f"{baseline.get('critique', '')} "
+                "Gemini evidence review skipped: script or sources missing."
+            ).strip(),
+        }
+
+    evidence = [
+        {
+            "title": source.get("title", ""),
+            "summary": source.get("summary", ""),
+        }
+        for source in sources
+    ]
+
+    prompt = f"""
+Review the factual claims in this explainer script against the supplied
+research summaries.
+
+Topic: {state.get("topic", "")}
+
+Research summaries:
+{json.dumps(evidence, ensure_ascii=False)}
+
+Script:
+{script}
+
+Rules:
+- Use only the supplied summaries as evidence.
+- Do not use outside knowledge to fill evidence gaps.
+- Distinguish a reasonable paraphrase from a claim that adds unsupported
+  details, causes, numbers, certainty, or relationships.
+- Do not reject a claim merely because it uses different wording.
+- Ignore clearly non-factual transitions and imaginative wording that
+  is not presented as a factual statement.
+- If a claim cannot be supported by these summaries, identify it and
+  explain what evidence is missing.
+- A supported verdict means only that no unsupported claim was identified
+  in this comparison. It does not prove that the claim is true.
+
+Return JSON with exactly these fields:
+{{
+  "supported": true,
+  "issues": [],
+  "summary": "Brief explanation of the review"
+}}
+
+Set supported to false if one or more substantive factual claims are
+unsupported. In that case, include concise, actionable issues identifying
+the relevant claims.
+""".strip()
+
+    review = _gemini_json(prompt, max_output_tokens=700)
+
+    # Do not interpret a missing or malformed review as a successful
+    # Gemini review. Retain the deterministic result and disclose the gap.
+    if (
+        not isinstance(review, dict)
+        or not isinstance(review.get("supported"), bool)
+        or not isinstance(review.get("issues"), list)
+        or not isinstance(review.get("summary"), str)
+    ):
+        return {
+            **baseline,
+            "critique": (
+                f"{baseline.get('critique', '')} "
+                "Gemini evidence review unavailable; factual accuracy "
+                "has not been independently verified."
+            ).strip(),
+        }
+
+    issues = _clean_str_list(review["issues"], 8)
+    summary = " ".join(review["summary"].split())
+
+    if not review["supported"] or issues:
+        feedback = (
+            "Gemini evidence review flagged potentially unsupported "
+            "claims. Revise or remove them using the supplied research: "
+            + "; ".join(issues)
+        ) if issues else (
+            "Gemini evidence review rejected the script but returned "
+            "no actionable issues. Review the script against the "
+            "supplied research summaries."
+        )
+
+        return {
+            "approved": False,
+            "critique": (
+                f"{baseline.get('critique', '')} {feedback}"
+            ).strip(),
+        }
+
+    return {
+        **baseline,
+        "critique": (
+            f"{baseline.get('critique', '')} "
+            f"Gemini evidence review: {summary or 'No unsupported claims identified in the supplied summaries.'} "
+            "This is not independent factual verification."
+        ).strip(),
+    }
 
 
 def revise_script_node(state: VideoState, writer=None) -> dict:

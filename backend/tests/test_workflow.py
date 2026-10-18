@@ -1207,7 +1207,7 @@ def test_llm_workflow_uses_selected_writer_for_revision():
             ],
         ) as gemini_writer,
         patch(
-            "app.graph.workflow.critic_node",
+            "app.graph.workflow.gemini_critic_node",
             side_effect=[
                 {"approved": False, "critique": "Fix the first draft."},
                 {"approved": True, "critique": "Approved."},
