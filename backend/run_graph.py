@@ -18,6 +18,12 @@ def main():
         help="Topic to explain in the video.",
     )
     parser.add_argument(
+        "--category",
+        choices=("cs", "physics"),
+        default="cs",
+        help="Subject category for the explainer (default: cs).",
+    )
+    parser.add_argument(
         "--gemini",
         action="store_true",
         help="Use Google's Gemini API to generate the script.",
@@ -62,6 +68,7 @@ def main():
 
     initial_state = {
         "topic": args.topic,
+        "category": args.category,
         "research_notes": [],
         "research_sources": [],
         "research_quality": "insufficient",
@@ -80,6 +87,7 @@ def main():
 
     print("\n=== EXPLAINER VIDEO AGENT ===")
     print(f"Topic: {result['topic']}")
+    print(f"Category: {result.get('category', 'cs')}")
     print(f"Scriptwriter: {writer}")
     print(f"Revisions: {result['revision_count']}")
     print(f"Research quality: {result.get('research_quality', 'unknown')}")

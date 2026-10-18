@@ -666,6 +666,39 @@ def _visual_description(topic: str, narration: str) -> str:
 
 
 
+def _physics_visual_description(topic: str, narration: str) -> str:
+    """Describe a physics scene without inventing measurements or claims."""
+    text = f"{topic} {narration}".lower()
+
+    if re.search(
+        r"projectile|trajectory|launched|thrown|thrown object",
+        text,
+    ):
+        focus = "projectile trajectory and the role of gravity"
+    elif re.search(r"force|newton|free.body|friction|tension", text):
+        focus = "the forces and motion relationships explained"
+    elif re.search(
+        r"energy|kinetic|potential energy|work done|power",
+        text,
+    ):
+        focus = "the energy transfers or transformations explained"
+    elif re.search(
+        r"velocity|acceleration|displacement|speed|position",
+        text,
+    ):
+        focus = "the kinematics quantities and motion described"
+    else:
+        focus = "the physical quantities and relationships explained"
+
+    return (
+        f"Physics illustration focused on {focus}. "
+        "Show only quantities, vectors, trajectories, and relationships "
+        "supported by the topic and narration. "
+        f"Scene narration: {narration} "
+        "Avoid invented numerical values or unsupported assumptions."
+    )
+
+
 def _visual_label(text: str) -> str:
     """Create a short display label from words actually present in narration."""
     text = re.sub(r"^[\s,;:]+|[\s,;:]+$", "", text)
@@ -890,7 +923,11 @@ def scene_planner_node(
         scene: dict[str, Any] = {
             "scene_number": number,
             "narration": narration,
-            "visual_description": _visual_description(topic, narration),
+            "visual_description": (
+                _physics_visual_description(topic, narration)
+                if state.get("category", "cs") == "physics"
+                else _visual_description(topic, narration)
+            ),
             "duration_seconds": duration,
         }
 

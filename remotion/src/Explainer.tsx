@@ -4,6 +4,7 @@ import { findVisual, type LibrarySpec } from "./visuals";
 import {
   AbsoluteFill,
   Audio,
+  OffthreadVideo,
   Sequence,
   staticFile,
   interpolate,
@@ -108,6 +109,8 @@ export type ExplainerScene = {
   narration: string;
   visualDescription: string;
   audioFile: string;
+  /** Optional silent video clip, relative to Remotion's public directory. */
+  videoFile?: string;
   durationInFrames: number;
   from: number;
   visual?: VisualSpec;
@@ -1568,7 +1571,20 @@ const Scene: React.FC<{ scene: ExplainerScene; topic: string; totalScenes: numbe
         transform: `scale(${(0.96 + 0.04 * panelIn) * drift})`,
         transformOrigin: "center",
       }}>
-        <Diagram spec={spec} duration={scene.durationInFrames} />
+        {scene.videoFile ? (
+          <OffthreadVideo
+            src={staticFile(scene.videoFile)}
+            muted
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "contain",
+              borderRadius: 12,
+            }}
+          />
+        ) : (
+          <Diagram spec={spec} duration={scene.durationInFrames} />
+        )}
       </div>
 
       <div style={{

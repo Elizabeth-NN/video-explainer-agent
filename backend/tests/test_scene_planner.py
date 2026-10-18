@@ -25,6 +25,27 @@ def test_scene_planner_creates_structured_scenes():
     assert scenes[1]["scene_number"] == 2
 
 
+def test_physics_category_uses_physics_specific_visual_description():
+    state = {
+        "topic": "Projectile motion",
+        "script": "The object moves through the air along a curved path.",
+        "approved": True,
+        "category": "physics",
+    }
+
+    physics_scene = scene_planner_node(state)["scenes"][0]
+    physics_description = physics_scene["visual_description"].lower()
+
+    assert "projectile trajectory" in physics_description
+    assert "gravity" in physics_description
+    assert "narration" in physics_description
+
+    # The default CS path must not infer physics details that were not stated.
+    cs_state = {**state, "category": "cs"}
+    cs_scene = scene_planner_node(cs_state)["scenes"][0]
+    assert "gravity" not in cs_scene["visual_description"].lower()
+
+
 def test_scene_planner_does_not_plan_unapproved_script():
     result = scene_planner_node(
         {
