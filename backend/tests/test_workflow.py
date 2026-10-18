@@ -189,7 +189,15 @@ def test_research_returns_source_titles_urls_and_summaries():
             )(),
         ]
 
-        result = research_node({"topic": "solar energy"})
+        with patch(
+            "app.graph.nodes.plan_research",
+            return_value={
+                "search_queries": ["solar energy"],
+                "key_questions": [],
+                "required_concepts": [],
+            },
+        ):
+            result = research_node({"topic": "solar energy"})
 
     assert len(result["research_sources"]) == 2
     assert len(result["research_notes"]) == 2
@@ -246,7 +254,7 @@ def test_research_deduplicates_identical_summaries(monkeypatch):
     monkeypatch.setattr("app.graph.nodes.requests.get", fake_get)
     monkeypatch.setattr(
         "app.graph.nodes.gemini_relevance_filter",
-        lambda topic, candidates: None,
+        lambda topic, candidates, key_questions=None: None,
     )
 
     result = research_node({"topic": "solar energy"})
@@ -292,7 +300,7 @@ def test_gemini_relevance_filter_returns_selected_sources(monkeypatch):
 
         result = gemini_relevance_filter("solar energy", candidates)
 
-    assert result == [candidates[0]]
+    assert result == ([candidates[0]], set())
 
 
 def test_gemini_relevance_filter_accepts_no_relevant_sources(monkeypatch):
@@ -313,7 +321,7 @@ def test_gemini_relevance_filter_accepts_no_relevant_sources(monkeypatch):
 
         result = gemini_relevance_filter("solar energy", candidates)
 
-    assert result == []
+    assert result == ([], set())
 
 
 def test_gemini_relevance_filter_returns_none_when_unavailable(monkeypatch):
@@ -376,7 +384,7 @@ def test_critic_rejects_script_that_is_too_short():
     result = critic_node(state)
 
     assert result["approved"] is False
-    assert "80–180 words" in result["critique"]
+    assert "80-180 words" in result["critique"]
 
 
 def test_critic_rejects_script_without_sources():
@@ -670,8 +678,8 @@ def test_water_cycle_fallback_explains_the_main_stages():
 
     assert script.startswith("Imagine")
     assert 80 <= len(script.split()) <= 180
-    assert "evaporate" in lower
-    assert "condense" in lower
+    assert "evaporation" in lower
+    assert "condensation" in lower
     assert "precipitation" in lower
     assert "clouds" in lower
     assert "the research describes this idea" not in lower
@@ -680,7 +688,10 @@ def test_water_cycle_fallback_explains_the_main_stages():
 def test_water_cycle_research_queries_include_main_stages():
     from app.graph.nodes import expand_research_queries
 
-    queries = expand_research_queries("The Water Cycle")
+    queries = expand_research_queries(
+        "The Water Cycle",
+        ["Water cycle", "Evaporation", "Condensation", "Precipitation"],
+    )
     normalized = {query.casefold() for query in queries}
 
     assert "water cycle" in normalized
@@ -746,7 +757,10 @@ def test_clean_research_text_repairs_solar_summary_phrases():
 def test_expand_research_queries_for_vaccines():
     from app.graph.nodes import expand_research_queries
 
-    queries = expand_research_queries("How vaccines work")
+    queries = expand_research_queries(
+        "How vaccines work",
+        ["Vaccine", "Immune system", "mRNA vaccine"],
+    )
 
     assert queries[0] == "How vaccines work"
     assert "Vaccine" in queries
@@ -757,7 +771,10 @@ def test_expand_research_queries_for_vaccines():
 def test_expand_research_queries_for_solar_energy():
     from app.graph.nodes import expand_research_queries
 
-    queries = expand_research_queries("How does solar energy work?")
+    queries = expand_research_queries(
+        "How does solar energy work?",
+        ["Solar power", "Photovoltaics", "Solar panel"],
+    )
 
     assert queries[0] == "How does solar energy work?"
     assert "Solar power" in queries
@@ -838,7 +855,15 @@ def test_research_expands_queries_when_sources_are_insufficient(monkeypatch):
     monkeypatch.setattr("app.graph.nodes.requests.get", fake_get)
     monkeypatch.setattr(
         "app.graph.nodes.gemini_relevance_filter",
-        lambda topic, candidates: None,
+        lambda topic, candidates, key_questions=None: None,
+    )
+    monkeypatch.setattr(
+        "app.graph.nodes.plan_research",
+        lambda topic: {
+            "search_queries": ["Vaccine"],
+            "key_questions": [],
+            "required_concepts": [],
+        },
     )
 
     result = research_node({"topic": "How vaccines work"})
@@ -1088,7 +1113,9 @@ def test_vaccine_script_keeps_source_titles_out_of_narration():
 
     assert "research sources for this explanation" not in script.lower()
     assert "Conjugate vaccine" not in script
-    assert "The central idea is preparation" in script
+    assert "immune system" in script.lower()
+    assert "pathogen" in script.lower()
+    assert "immune response" in script.lower()
     assert len(state["research_sources"]) == 2
 
 
@@ -1202,15 +1229,18 @@ def test_llm_workflow_uses_selected_writer_for_revision():
 def test_expand_research_queries_for_earthquakes():
     from app.graph.nodes import expand_research_queries
 
-    queries = expand_research_queries("How Earthquakes Happen")
+    topic = "How Earthquakes Happen"
+    queries = expand_research_queries(
+        topic,
+        ["Earthquake", "Fault (geology)", "Plate tectonics", "Seismic wave"],
+    )
 
-    assert queries[0] == "How Earthquakes Happen"
+    assert queries[0] == topic
     assert "Earthquake" in queries
     assert "Fault (geology)" in queries
     assert "Plate tectonics" in queries
     assert "Seismic wave" in queries
     assert len(queries) == len({query.casefold() for query in queries})
-
 
 def test_earthquake_relevance_accepts_geology_sources():
     topic = "How Earthquakes Happen"
@@ -1235,7 +1265,16 @@ def test_expand_research_queries_for_database_indexes():
     from app.graph.nodes import expand_research_queries
 
     topic = "How Database Indexes Make Queries Faster"
-    queries = expand_research_queries(topic)
+    queries = expand_research_queries(
+        topic,
+        [
+            "Database index",
+            "Index (database)",
+            "B-tree",
+            "Database indexing",
+            "Index scan",
+        ],
+    )
 
     assert queries[0] == topic
     assert "Database index" in queries
@@ -1244,7 +1283,6 @@ def test_expand_research_queries_for_database_indexes():
     assert "Database indexing" in queries
     assert "Index scan" in queries
     assert len(queries) == len({query.casefold() for query in queries})
-
 
 def test_database_index_relevance_accepts_index_sources():
     topic = "How Database Indexes Make Queries Faster"
