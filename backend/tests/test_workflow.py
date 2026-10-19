@@ -1655,3 +1655,145 @@ def test_tavily_fallback_does_not_repeat_search(monkeypatch):
 
     mock_post.assert_not_called()
     assert result == {"tavily_used": True}
+
+
+def test_physics_research_fallback_plans_requested_concepts(monkeypatch):
+    from app.graph.nodes import plan_research
+
+    monkeypatch.setattr(
+        "app.graph.nodes._gemini_json",
+        lambda *args, **kwargs: None,
+    )
+
+    plan = plan_research(
+        "Physics fundamentals: Newton's second law, kinematics, "
+        "free fall, projectile motion, and potential energy"
+    )
+
+    concepts = {item["concept"] for item in plan["required_concepts"]}
+    queries = {query.casefold() for query in plan["search_queries"]}
+
+    assert concepts == {
+        "Newton's second law",
+        "Kinematics",
+        "Free fall",
+        "Projectile motion",
+        "Gravitational potential energy",
+    }
+    assert len(plan["key_questions"]) == 5
+    assert "kinematics" in queries
+    assert "free fall" in queries
+    assert "projectile motion" in queries
+    assert "gravitational potential energy" in queries
+
+
+def test_physics_relevance_accepts_concept_specific_articles():
+    from app.graph.nodes import is_relevant_source
+
+    topic = (
+        "Physics fundamentals: Newton's second law, kinematics, "
+        "free fall, projectile motion, and potential energy"
+    )
+
+    assert is_relevant_source(
+        topic,
+        "Free fall",
+        "Free fall describes motion under gravity and gravitational acceleration.",
+    )
+    assert is_relevant_source(
+        topic,
+        "Projectile motion",
+        "A projectile follows a trajectory determined by its launch angle.",
+    )
+    assert is_relevant_source(
+        topic,
+        "Gravitational potential energy",
+        "Potential energy depends on an object's mass, height, and gravity.",
+    )
+
+
+def test_physics_relevance_rejects_unrelated_articles():
+    from app.graph.nodes import is_relevant_source
+
+    topic = (
+        "Physics fundamentals: Newton's second law, kinematics, "
+        "free fall, projectile motion, and potential energy"
+    )
+
+    assert not is_relevant_source(
+        topic,
+        "Physics education",
+        "This article discusses university admissions and teaching policy.",
+    )
+
+def test_multi_concept_physics_fallback_covers_all_requested_concepts():
+    from app.graph.nodes import scriptwriter_node
+
+    state = initial_state(
+        topic=(
+            "Physics fundamentals: Newton's second law, kinematics, "
+            "free fall, projectile motion, and potential energy"
+        )
+    )
+    state["required_concepts"] = [
+        {"concept": "Newton's second law", "keywords": ["newton", "force", "mass", "acceleration"]},
+        {"concept": "Kinematics", "keywords": ["kinematics", "position", "displacement", "velocity"]},
+        {"concept": "Free fall", "keywords": ["free fall", "gravity", "falling object"]},
+        {"concept": "Projectile motion", "keywords": ["projectile", "trajectory", "launch angle"]},
+        {"concept": "Gravitational potential energy", "keywords": ["potential energy", "height", "mgh"]},
+    ]
+    state["research_sources"] = [
+        {
+            "title": "Newton's second law",
+            "url": "https://example.com/newton",
+            "summary": (
+                "Newton's second law states that net force equals mass times acceleration. "
+                "The equation is F equals ma."
+            ),
+        },
+        {
+            "title": "Kinematics",
+            "url": "https://example.com/kinematics",
+            "summary": (
+                "Kinematics describes motion through position, displacement, velocity, and acceleration."
+            ),
+        },
+        {
+            "title": "Free fall",
+            "url": "https://example.com/free-fall",
+            "summary": (
+                "In free fall, gravity causes downward acceleration. "
+                "Air resistance can change an object's motion."
+            ),
+        },
+        {
+            "title": "Projectile motion",
+            "url": "https://example.com/projectile",
+            "summary": (
+                "Projectile motion follows a curved trajectory. "
+                "Launch angle affects the range."
+            ),
+        },
+        {
+            "title": "Gravitational potential energy",
+            "url": "https://example.com/potential-energy",
+            "summary": (
+                "Gravitational potential energy depends on mass, gravity, and height. "
+                "Near Earth's surface, PE equals mgh."
+            ),
+        },
+    ]
+
+    script = scriptwriter_node(state)["script"]
+    lower = script.lower()
+
+    assert script.startswith("Imagine")
+    assert 80 <= len(script.split()) <= 180
+    for phrase in (
+        "newton's second law",
+        "kinematics",
+        "free fall",
+        "projectile motion",
+        "gravitational potential energy",
+    ):
+        assert phrase in lower

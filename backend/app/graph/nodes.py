@@ -18,7 +18,7 @@ USER_AGENT = "ExplainerVideoAgent/0.1 (educational research prototype)"
 
 # Research tuning. Each planned query costs one search plus one summary
 # request per new article, so keep these modest.
-MAX_PLANNED_QUERIES = 4        # planner queries used after the original topic
+MAX_PLANNED_QUERIES = 5        # planner queries used after the original topic
 MAX_GAP_QUERIES = 2            # extra searches for uncovered key questions
 INITIAL_SEARCH_LIMIT = 10      # results for the user's original topic
 RELATED_SEARCH_LIMIT = 5       # results for each planned or gap query
@@ -175,6 +175,69 @@ def _clean_concepts(value: object, limit: int = 6) -> list[dict]:
 # Research planning
 # ---------------------------------------------------------------------------
 
+_PHYSICS_CONCEPTS = (
+    {
+        "concept": "Newton's second law",
+        "markers": ("newton", "net force", "force mass acceleration"),
+        "query": "Newton's laws of motion",
+        "question": "How do net force, mass, and acceleration relate?",
+        "keywords": ["newton", "net force", "mass", "acceleration"],
+    },
+    {
+        "concept": "Kinematics",
+        "markers": ("kinematics",),
+        "query": "Kinematics",
+        "question": "How are position, displacement, velocity, and acceleration related?",
+        "keywords": ["kinematics", "displacement", "velocity", "acceleration"],
+    },
+    {
+        "concept": "Free fall",
+        "markers": ("free fall", "falling object"),
+        "query": "Free fall",
+        "question": "How does gravity affect a freely falling object?",
+        "keywords": ["free fall", "gravity", "falling object", "gravitational acceleration"],
+    },
+    {
+        "concept": "Projectile motion",
+        "markers": ("projectile",),
+        "query": "Projectile motion",
+        "question": "How do launch speed and angle affect a projectile's path?",
+        "keywords": ["projectile", "trajectory", "launch angle", "parabolic"],
+    },
+    {
+        "concept": "Gravitational potential energy",
+        "markers": ("potential energy", "mgh"),
+        "query": "Gravitational potential energy",
+        "question": "How are mass, height, and gravitational potential energy related?",
+        "keywords": ["potential energy", "gravitational potential", "height", "mgh"],
+    },
+)
+
+
+def _physics_fallback_plan(topic: str) -> dict | None:
+    """Build a deterministic plan when a topic names recognised physics concepts."""
+    normalized = " ".join(topic.casefold().split())
+    selected = [
+        item for item in _PHYSICS_CONCEPTS
+        if any(marker in normalized for marker in item["markers"])
+    ]
+
+    if not selected:
+        return None
+
+    return {
+        "search_queries": [item["query"] for item in selected],
+        "key_questions": [item["question"] for item in selected],
+        "required_concepts": [
+            {
+                "concept": item["concept"],
+                "keywords": item["keywords"],
+            }
+            for item in selected
+        ],
+    }
+
+
 def plan_research(topic: str) -> dict:
     """Plan the research for any topic.
 
@@ -184,7 +247,7 @@ def plan_research(topic: str) -> dict:
     Falls back to a plan containing only the original topic.
     """
     topic = topic.strip()
-    fallback = {
+    fallback = _physics_fallback_plan(topic) or {
         "search_queries": [topic],
         "key_questions": [],
         "required_concepts": [],
@@ -387,6 +450,47 @@ def is_relevant_source(topic: str, title: str, summary: str) -> bool:
 
     if any(supporting_concepts):
         return True
+
+    # Multi-concept physics lessons may rely on separate articles.
+    # Require a concept-specific title and supporting evidence in the summary.
+    physics_topic = " ".join(topic.lower().split())
+
+    physics_evidence = {
+        "newton": (
+            ("newton", "law of motion", "net force"),
+            ("force", "mass", "acceleration"),
+        ),
+        "kinematics": (
+            ("kinematics",),
+            ("velocity", "displacement", "acceleration", "position"),
+        ),
+        "free fall": (
+            ("free fall", "falling object"),
+            ("gravity", "gravitational acceleration", "falling"),
+        ),
+        "projectile": (
+            ("projectile",),
+            ("trajectory", "launch angle", "parabolic", "projectile"),
+        ),
+        "potential energy": (
+            ("potential energy", "gravitational potential"),
+            ("height", "mass", "gravity", "energy"),
+        ),
+    }
+
+    for concept, (title_markers, evidence_markers) in physics_evidence.items():
+        if concept not in physics_topic:
+            continue
+
+        title_matches = any(
+            marker in title_lower for marker in title_markers
+        )
+        evidence_matches = sum(
+            marker in combined for marker in evidence_markers
+        )
+
+        if title_matches and evidence_matches >= 1:
+            return True
 
     matched_words = topic_words & content_words
     required_matches = max(1, (len(topic_words) * 2 + 2) // 3)
@@ -905,6 +1009,88 @@ def tavily_research_node(state: VideoState) -> dict:
 # Script writing
 # ---------------------------------------------------------------------------
 
+def _multi_concept_physics_script(
+    evidence: list[str],
+    required_concepts: list[dict],
+) -> str | None:
+    """Build an ordered physics lesson when every requested concept has evidence."""
+    sections = (
+        (
+            "Newton's second law",
+            ("newton", "net force", "force", "mass", "acceleration"),
+            "First, Newton's second law connects net force, mass, and acceleration.",
+        ),
+        (
+            "Kinematics",
+            ("kinematics", "position", "displacement", "velocity"),
+            "Next, kinematics describes motion through position, displacement, and velocity.",
+        ),
+        (
+            "Free fall",
+            ("free fall", "falling object", "gravity", "gravitational acceleration"),
+            "Free fall focuses on the motion of objects under gravity.",
+        ),
+        (
+            "Projectile motion",
+            ("projectile", "trajectory", "launch angle", "parabolic"),
+            "Projectile motion applies these motion ideas to an object following a curved trajectory.",
+        ),
+        (
+            "Gravitational potential energy",
+            ("potential energy", "gravitational potential", "mgh", "height"),
+            "Finally, gravitational potential energy relates an object's mass and height to stored energy.",
+        ),
+    )
+
+    requested = {
+        str(item.get("concept", "")).casefold()
+        for item in required_concepts
+        if isinstance(item, dict)
+    }
+    if not all(name.casefold() in requested for name, _, _ in sections):
+        return None
+
+    used: set[str] = set()
+    selected: list[str] = []
+
+    for _, markers, _ in sections:
+        candidates = []
+        for sentence in evidence:
+            normalized = sentence.casefold()
+            count = len(sentence.split())
+
+            if normalized in used or not 4 <= count <= 24:
+                continue
+
+            hits = sum(marker in normalized for marker in markers)
+            if hits:
+                candidates.append((hits, -count, sentence))
+
+        if not candidates:
+            return None
+
+        _, _, sentence = max(candidates, key=lambda item: (item[0], item[1]))
+        used.add(sentence.casefold())
+        selected.append(sentence)
+
+    parts = [
+        "Imagine connecting five physics ideas to understand how forces, motion, and energy work together."
+    ]
+
+    for (_, _, introduction), sentence in zip(sections, selected):
+        parts.extend((introduction, sentence))
+
+    parts.append(
+        "Together, these concepts provide a connected introduction to forces, motion, trajectories, and energy."
+    )
+
+    script = re.sub(r"\\s+", " ", " ".join(parts)).strip()
+    if not 80 <= len(script.split()) <= 180:
+        return None
+
+    return script
+
+
 def scriptwriter_node(state: VideoState) -> dict:
     """Create a deterministic, evidence-grounded fallback script."""
     topic = state["topic"].strip()
@@ -941,6 +1127,13 @@ def scriptwriter_node(state: VideoState) -> dict:
         raise RuntimeError(
             "The available research sources contain no usable summaries."
         )
+
+    physics_script = _multi_concept_physics_script(
+        evidence,
+        state.get("required_concepts") or [],
+    )
+    if physics_script:
+        return {"script": physics_script}
 
     topic_label = re.sub(
         r"^(how does|how do|how is|how are|how can|what is|what are)\s+",
