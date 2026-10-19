@@ -5,7 +5,7 @@ from pathlib import Path
 from app.graph.workflow import build_graph
 from app.services.narration import DEFAULT_VOICE, generate_narration
 from app.services.remotion_renderer import render_remotion_video
-from app.services.physics_video_renderer import render_projectile_motion_clip
+from app.services.physics_animation_dispatcher import render_physics_clips
 from app.services.video_renderer import render_video
 
 
@@ -165,26 +165,35 @@ def main():
             )
             print("Audio manifest: manifest.json")
 
-            # Only attach Manim clips for supported Physics topics.
-            # All other scenes retain their existing Remotion visuals.
+            # Attach dedicated Manim animations to supported Physics scenes.
+            # Remotion still assembles the full narrated explainer.
             if (
                 args.video
                 and args.renderer == "remotion"
                 and args.category == "physics"
             ):
-                clip_result = render_projectile_motion_clip(
+                clip_result = render_physics_clips(
                     manifest_path=Path(args.output_dir) / "manifest.json",
                     output_dir=Path(args.output_dir) / "physics_clips",
                 )
+
                 if clip_result["status"] == "rendered":
-                    print(
-                        "Manim clip attached to scene "
-                        f"{clip_result['scene_number']}: "
-                        f"{clip_result['clip_file']}"
-                    )
+                    for clip in clip_result["clips"]:
+                        print(
+                            f"Manim animation {clip['animation']} attached "
+                            f"to scene(s) {clip['scene_numbers']}: "
+                            f"{clip['clip_file']}"
+                        )
+
+                    for scene in clip_result["unsupported_scenes"]:
+                        print(
+                            "Manim animation not available for scene "
+                            f"{scene['scene_number']}: "
+                            f"{scene['narration']}"
+                        )
                 else:
                     print(
-                        "Manim clip skipped: "
+                        "Manim animations skipped: "
                         f"{clip_result['reason']}"
                     )
 
