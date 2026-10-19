@@ -10,7 +10,7 @@ from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_RENDER_TIMEOUT_SECONDS = 1800
-REMOTION_TIMEOUT_MS = 120000
+REMOTION_TIMEOUT_MS = 300000
 
 
 def _run_command(
