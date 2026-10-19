@@ -2,6 +2,9 @@ import json
 import math
 import os
 import re
+import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import quote, urlsplit, urlunsplit
 
@@ -23,6 +26,76 @@ MAX_GAP_QUERIES = 2            # extra searches for uncovered key questions
 INITIAL_SEARCH_LIMIT = 10      # results for the user's original topic
 RELATED_SEARCH_LIMIT = 5       # results for each planned or gap query
 MAX_JUDGED_CANDIDATES = 25     # candidates sent to the relevance judge
+
+
+WIKIPEDIA_MAX_ATTEMPTS = 3
+WIKIPEDIA_MAX_RETRY_DELAY = 30
+
+
+def _wikipedia_get(
+    url,
+    *,
+    params=None,
+    headers=None,
+    timeout=15,
+):
+    """Make a Wikipedia request with bounded retries for transient failures."""
+    request_headers = {"User-Agent": USER_AGENT}
+    if headers:
+        request_headers.update(headers)
+
+    for attempt in range(WIKIPEDIA_MAX_ATTEMPTS):
+        try:
+            response = requests.get(
+                url,
+                params=params,
+                headers=request_headers,
+                timeout=timeout,
+            )
+        except requests.RequestException:
+            if attempt == WIKIPEDIA_MAX_ATTEMPTS - 1:
+                raise
+            time.sleep(2 ** attempt)
+            continue
+
+        status = getattr(response, "status_code", 200)
+        if not isinstance(status, int):
+            status = 200
+
+        if status == 429 or 500 <= status < 600:
+            if attempt == WIKIPEDIA_MAX_ATTEMPTS - 1:
+                response.raise_for_status()
+
+            headers = getattr(response, "headers", {}) or {}
+            retry_after = headers.get("Retry-After")
+            delay = None
+
+            if retry_after:
+                try:
+                    delay = float(retry_after)
+                except (TypeError, ValueError):
+                    try:
+                        retry_time = parsedate_to_datetime(retry_after)
+                        if retry_time.tzinfo is None:
+                            retry_time = retry_time.replace(tzinfo=timezone.utc)
+                        delay = (
+                            retry_time - datetime.now(timezone.utc)
+                        ).total_seconds()
+                    except (TypeError, ValueError, OverflowError):
+                        delay = None
+
+            if delay is None:
+                delay = 2 ** attempt
+
+            time.sleep(
+                min(max(delay, 0), WIKIPEDIA_MAX_RETRY_DELAY)
+            )
+            continue
+
+        response.raise_for_status()
+        return response
+
+    raise RuntimeError("Wikipedia request retries were exhausted.")
 
 # Critic tuning: fraction of the planner's required concepts that the
 # script must mention before it can be approved.
@@ -841,7 +914,7 @@ def classify_research_quality(
 
 def search_wikipedia(query: str, limit: int = 10) -> list[dict]:
     """Search Wikipedia and return raw search results."""
-    response = requests.get(
+    response = _wikipedia_get(
         WIKIPEDIA_API,
         params={
             "action": "query",
@@ -857,13 +930,17 @@ def search_wikipedia(query: str, limit: int = 10) -> list[dict]:
     return response.json()["query"]["search"]
 
 
-def fetch_candidate(title: str) -> dict | None:
-    """Fetch one article summary, or None if it is unusable."""
+def fetch_candidate(
+    title: str,
+    *,
+    full_extract: bool = False,
+) -> dict | None:
+    """Fetch an article summary, optionally enriching it with a longer extract."""
     slug = quote(title.replace(" ", "_"), safe="()_")
     page_url = "https://en.wikipedia.org/wiki/" + slug
 
     try:
-        response = requests.get(
+        response = _wikipedia_get(
             "https://en.wikipedia.org/api/rest_v1/page/summary/" + slug,
             headers={"User-Agent": USER_AGENT},
             timeout=15,
@@ -884,6 +961,40 @@ def fetch_candidate(title: str) -> dict | None:
     summary = clean_research_text(extract)
     if not summary:
         return None
+
+    # Physics explainers need enough detail to connect several concepts.
+    # Keep the REST summary as a fallback if the longer extract is unavailable.
+    if full_extract:
+        try:
+            extract_response = _wikipedia_get(
+                WIKIPEDIA_API,
+                params={
+                    "action": "query",
+                    "prop": "extracts",
+                    "explaintext": 1,
+                    "exchars": 6000,
+                    "redirects": 1,
+                    "titles": title,
+                    "format": "json",
+                },
+                headers={"User-Agent": USER_AGENT},
+                timeout=15,
+            )
+            extract_response.raise_for_status()
+            extract_data = extract_response.json()
+            pages = extract_data.get("query", {}).get("pages", {})
+            if isinstance(pages, dict):
+                for article in pages.values():
+                    if not isinstance(article, dict):
+                        continue
+                    longer_extract = article.get("extract", "")
+                    if isinstance(longer_extract, str):
+                        cleaned_extract = clean_research_text(longer_extract)
+                        if len(cleaned_extract) > len(summary):
+                            summary = cleaned_extract
+                    break
+        except (requests.RequestException, ValueError, AttributeError):
+            pass
 
     content_urls = page.get("content_urls", {})
     desktop = (
@@ -946,6 +1057,32 @@ def evaluate_sources(
                 )
             ]
 
+        # Supplement Gemini's selections for multi-concept physics topics.
+        physics_plan = _physics_fallback_plan(topic)
+        if physics_plan is not None and filtered:
+            existing = {
+                (item.get("url", ""), item.get("title", "").casefold())
+                for item in filtered
+            }
+            supplemental = [
+                item
+                for item in deduped
+                if (
+                    item.get("url", ""),
+                    item.get("title", "").casefold(),
+                ) not in existing
+                and is_relevant_source(
+                    topic,
+                    item.get("title", ""),
+                    item.get("summary", ""),
+                )
+            ]
+
+            if supplemental:
+                filtered.extend(supplemental)
+                # Gemini's original coverage assessment is now stale.
+                covered = None
+
         return deduplicate_valid_sources(filtered), covered
 
     baseline = [
@@ -970,6 +1107,7 @@ def research_node(state: VideoState) -> dict:
 
         candidates: list[dict] = []
         seen_titles: set[str] = set()
+        use_full_extract = _physics_fallback_plan(topic) is not None
 
         def add_candidates(search_results: list[dict]) -> None:
             """Fetch summaries, skipping malformed or repeated results."""
@@ -989,7 +1127,7 @@ def research_node(state: VideoState) -> dict:
                     continue
                 seen_titles.add(title_key)
 
-                candidate = fetch_candidate(title)
+                candidate = fetch_candidate(title, full_extract=False)
                 if candidate is not None:
                     candidates.append(candidate)
 
@@ -1000,18 +1138,22 @@ def research_node(state: VideoState) -> dict:
                 except (requests.RequestException, KeyError, ValueError):
                     continue
 
-        # Always search the user's original topic first, and let a
-        # failure here surface as a research error.
+        # Search the user's original topic first. A failure here should
+        # still surface as a research error.
         initial_results = search_wikipedia(queries[0], INITIAL_SEARCH_LIMIT)
 
         if not initial_results:
-            # Related searches may still find useful material.
             print(f"No direct Wikipedia results for: {topic}")
 
-        add_candidates(initial_results)
+        # Add planned results first so concept-specific evidence is not
+        # crowded out by broad-topic results when candidates are capped.
+        run_searches(
+            queries[1:MAX_PLANNED_QUERIES + 1],
+            RELATED_SEARCH_LIMIT,
+        )
 
-        # Planned searches add other aspects of the topic.
-        run_searches(queries[1:MAX_PLANNED_QUERIES + 1], RELATED_SEARCH_LIMIT)
+        # Preserve broad-topic results as supplementary evidence.
+        add_candidates(initial_results)
 
         sources, covered = evaluate_sources(topic, candidates, key_questions)
 
@@ -1043,6 +1185,24 @@ def research_node(state: VideoState) -> dict:
                 "No sufficiently relevant research sources were found. "
                 "Try a more specific topic or check the research results."
             )
+
+        # Longer extracts are more expensive. Retrieve them only for sources
+        # that survived relevance filtering, not every search result.
+        if use_full_extract:
+            for source in sources:
+                try:
+                    enriched = fetch_candidate(
+                        source["title"],
+                        full_extract=True,
+                    )
+                except (requests.RequestException, KeyError, ValueError):
+                    continue
+
+                if (
+                    enriched
+                    and len(enriched["summary"]) > len(source["summary"])
+                ):
+                    source["summary"] = enriched["summary"]
 
         research_notes = [
             f"{item['title']}: {item['summary']}"
@@ -1389,13 +1549,23 @@ def scriptwriter_node(state: VideoState) -> dict:
             "The available research sources contain no usable summaries."
         )
 
+    required_concepts = state.get("required_concepts") or []
     physics_script = _multi_concept_physics_script(
         topic,
         evidence,
-        state.get("required_concepts") or [],
+        required_concepts,
     )
     if physics_script:
         return {"script": physics_script}
+
+    physics_plan = _physics_fallback_plan(topic)
+    if physics_plan and len(physics_plan["required_concepts"]) > 1:
+        raise RuntimeError(
+            "Cannot produce a complete multi-concept physics script. "
+            "The retrieved evidence does not adequately cover every "
+            "requested concept. Improve research coverage before "
+            "generating narration or video."
+        )
 
     topic_label = re.sub(
         r"^(how does|how do|how is|how are|how can|what is|what are)\s+",

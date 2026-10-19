@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 from app.graph.nodes import (
     clean_research_text,
+    evaluate_sources,
     critic_node,
     gemini_critic_node,
     gemini_relevance_filter,
@@ -1863,3 +1864,92 @@ def test_multi_concept_physics_fallback_covers_all_requested_concepts():
         "gravitational potential energy",
     ):
         assert phrase in lower
+
+
+def test_multiconcept_physics_sources_are_supplemented(monkeypatch):
+    topic = (
+        "Physics fundamentals: Newton's second law, kinematics, free fall, "
+        "projectile motion, and potential energy"
+    )
+    candidates = [
+        {
+            "title": "Newton's laws of motion",
+            "url": "https://example.com/newton",
+            "summary": "Newton's second law states that net force equals mass times acceleration.",
+        },
+        {
+            "title": "Kinematics",
+            "url": "https://example.com/kinematics",
+            "summary": "Kinematics describes motion through position, displacement, velocity, and acceleration.",
+        },
+        {
+            "title": "Free fall",
+            "url": "https://example.com/free-fall",
+            "summary": "In free fall, gravity causes downward acceleration. Air resistance can change an object's motion.",
+        },
+        {
+            "title": "Projectile motion",
+            "url": "https://example.com/projectile",
+            "summary": "Projectile motion follows a curved trajectory. Launch angle affects the range.",
+        },
+        {
+            "title": "Gravitational potential energy",
+            "url": "https://example.com/potential-energy",
+            "summary": "Gravitational potential energy depends on mass, gravity, and height. Near Earth's surface, PE equals mgh.",
+        },
+    ]
+
+    selected = [candidates[0], candidates[4]]
+    monkeypatch.setattr(
+        "app.graph.nodes.gemini_relevance_filter",
+        lambda topic, sources, key_questions: (selected, {0}),
+    )
+
+    sources, covered = evaluate_sources(topic, candidates, [])
+
+    titles = {source["title"] for source in sources}
+    assert len(sources) == 5
+    assert "Newton's laws of motion" in titles
+    assert "Kinematics" in titles
+    assert "Free fall" in titles
+    assert "Projectile motion" in titles
+    assert "Gravitational potential energy" in titles
+    assert covered is None
+
+
+def test_wikipedia_get_retries_http_429(monkeypatch):
+    import requests
+    from app.graph.nodes import _wikipedia_get
+
+    class FakeResponse:
+        def __init__(self, status_code, headers=None):
+            self.status_code = status_code
+            self.headers = headers or {}
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise requests.HTTPError(
+                    f"HTTP {self.status_code}"
+                )
+
+    rate_limited = FakeResponse(429, {"Retry-After": "0"})
+    successful = FakeResponse(200)
+    responses = iter([rate_limited, successful])
+    calls = []
+    sleeps = []
+
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs))
+        return next(responses)
+
+    monkeypatch.setattr("app.graph.nodes.requests.get", fake_get)
+    monkeypatch.setattr("app.graph.nodes.time.sleep", sleeps.append)
+
+    result = _wikipedia_get(
+        "https://en.wikipedia.org/w/api.php",
+        params={"action": "query"},
+    )
+
+    assert result is successful
+    assert len(calls) == 2
+    assert sleeps == [0]
