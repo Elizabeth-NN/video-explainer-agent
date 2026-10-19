@@ -148,7 +148,7 @@ def test_reports_manim_failure(tmp_path, monkeypatch):
         raise subprocess.CalledProcessError(
             1,
             args[0],
-            stdout="",
+            output="",
             stderr="Simulated Manim failure",
         )
 
