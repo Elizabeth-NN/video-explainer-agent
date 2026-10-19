@@ -838,3 +838,81 @@ def test_gemini_planner_prompt_guides_indexscan_selection(monkeypatch):
     assert '"indexscan"' in system_instruction
     assert "without scanning every row" in system_instruction
     assert "illustrative row IDs" in system_instruction
+
+
+def test_deterministic_selector_chooses_array_visual_for_bubble_sort():
+    from app.graph.scene_planner import _deterministic_library_visual
+
+    visual = _deterministic_library_visual(
+        "Bubble sort",
+        "Bubble sort compares adjacent values and swaps them when needed.",
+    )
+
+    assert visual is not None
+    assert visual["type"] == "array"
+    assert visual["algorithm"] == "bubble-sort"
+
+
+def test_deterministic_selector_chooses_indexscan_for_database_index():
+    from app.graph.scene_planner import _deterministic_library_visual
+
+    visual = _deterministic_library_visual(
+        "Database indexes",
+        "An index helps the database find a row without scanning every row.",
+    )
+
+    assert visual is not None
+    assert visual["type"] == "indexscan"
+    assert visual["target"] in visual["values"]
+
+
+def test_scene_planner_uses_library_visual_without_gemini():
+    from app.graph.scene_planner import scene_planner_node
+
+    result = scene_planner_node({
+        "approved": True,
+        "topic": "Bubble sort",
+        "category": "cs",
+        "script": (
+            "Bubble sort compares adjacent values and swaps them when needed."
+        ),
+    })
+
+    assert result["scenes"]
+    assert result["scenes"][0]["visual"]["type"] == "array"
+
+
+def test_deterministic_selector_leaves_specialised_topics_alone():
+    from app.graph.scene_planner import _deterministic_library_visual
+
+    assert _deterministic_library_visual(
+        "How vaccines work",
+        "The immune system recognises a pathogen and responds to it.",
+    ) is None
+
+    assert _deterministic_library_visual(
+        "How solar panels work",
+        "Solar panels convert sunlight into electrical energy.",
+    ) is None
+
+
+def test_physics_category_does_not_select_cs_library_visual():
+    from app.graph.scene_planner import scene_planner_node
+
+    result = scene_planner_node({
+        "approved": True,
+        "topic": "Projectile motion",
+        "category": "physics",
+        "script": (
+            "A projectile follows a curved path as it moves through the air."
+        ),
+    })
+
+    assert result["scenes"]
+    visual = result["scenes"][0].get("visual")
+    assert visual is None or visual["type"] not in {
+        "array", "tree", "chain", "graph", "exchange", "code",
+        "architecture", "balancer", "ring", "cache",
+        "pipeline", "deploy", "table", "join", "indexscan",
+        "replication", "sharding",
+    }

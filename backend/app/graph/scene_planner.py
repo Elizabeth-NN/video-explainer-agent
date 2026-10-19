@@ -892,6 +892,267 @@ def _semantic_visual(narration: str) -> dict | None:
         return None
 
 
+def _deterministic_library_visual(
+    topic: str,
+    narration: str,
+) -> dict[str, Any] | None:
+    """Choose a registered Remotion visual from explicit CS scene content.
+
+    Example values in these specs are illustrative animation data, not facts
+    inferred from the narration. Specialised science visuals are left to the
+    existing visual resolver.
+    """
+    topic_text = topic.lower()
+    sentence = narration.lower()
+
+    # Preserve the existing specialised topic visuals.
+    specialised_topics = (
+        "solar", "photovoltaic", "vaccine", "immun",
+        "heart", "blood circulation", "water cycle",
+        "projectile", "physics",
+    )
+    if any(term in topic_text for term in specialised_topics):
+        return None
+
+    # More specific database concepts must win over generic table/code matches.
+    if "index" in sentence and any(
+        term in sentence for term in ("database", "query", "row", "scan")
+    ):
+        return {
+            "type": "indexscan",
+            "title": "Finding a row with an index",
+            "values": [42, 7, 19, 88, 3, 56, 71, 25],
+            "target": 71,
+        }
+
+    if "join" in sentence and any(
+        term in sentence for term in ("sql", "table", "database", "rows")
+    ):
+        return {
+            "type": "join",
+            "title": "Combining related tables",
+            "left": {
+                "name": "users",
+                "columns": ["id", "name"],
+                "rows": [[1, "Ana"], [2, "Ben"], [3, "Cara"]],
+            },
+            "right": {
+                "name": "orders",
+                "columns": ["user_id", "item"],
+                "rows": [[1, "Book"], [1, "Pen"], [3, "Bag"]],
+            },
+            "on": {"left": "id", "right": "user_id"},
+            "joinType": "left",
+        }
+
+    if any(term in sentence for term in ("replication", "replica", "replicas")):
+        return {
+            "type": "replication",
+            "title": "Database replication",
+            "replicas": 2,
+            "mode": "async",
+            "writes": 3,
+            "failover": True,
+        }
+
+    if any(term in sentence for term in ("sharding", "shard key", "shards")):
+        return {
+            "type": "sharding",
+            "title": "Splitting data across shards",
+            "shards": 3,
+            "keys": ["ana", "ben", "cara", "dan", "eli", "fay"],
+            "strategy": "hash",
+        }
+
+    if any(term in sentence for term in ("lru cache", "cache hit", "cache miss", "cache eviction")):
+        return {
+            "type": "cache",
+            "title": "How a cache works",
+            "capacity": 3,
+            "policy": "lru",
+            "accesses": ["A", "B", "C", "A", "D", "B"],
+        }
+
+    if "binary search" in sentence:
+        return {
+            "type": "array",
+            "title": "Binary search",
+            "values": [3, 8, 12, 19, 25, 31, 42],
+            "algorithm": "binary-search",
+            "target": 25,
+        }
+
+    if any(term in sentence for term in ("bubble sort", "sorting algorithm", "sorts an array")):
+        return {
+            "type": "array",
+            "title": "Bubble sort",
+            "values": [5, 2, 9, 1, 7, 3],
+            "algorithm": "bubble-sort",
+            "footnote": "Large values bubble toward the end",
+        }
+
+    if "linear search" in sentence:
+        return {
+            "type": "array",
+            "title": "Linear search",
+            "values": [5, 2, 9, 1, 7, 3],
+            "algorithm": "linear-search",
+            "target": 7,
+        }
+
+    if any(term in sentence for term in ("binary search tree", "bst", "tree traversal", "parent node", "child node")):
+        return {
+            "type": "tree",
+            "title": "Traversing a binary tree",
+            "values": [8, 3, 10, 1, 6, 14, 4],
+            "algorithm": "inorder",
+        }
+
+    if any(term in sentence for term in ("stack", "queue", "linked list", "push", "pop", "enqueue", "dequeue")):
+        kind = "queue" if any(
+            term in sentence for term in ("queue", "enqueue", "dequeue")
+        ) else "stack"
+        return {
+            "type": "chain",
+            "title": "Working with a " + kind,
+            "kind": kind,
+            "values": [4, 7, 2] if kind == "stack" else [1, 2, 3],
+            "ops": (
+                [{"op": "pop"}, {"op": "push", "value": 9}]
+                if kind == "stack"
+                else [{"op": "dequeue"}, {"op": "enqueue", "value": 4}]
+            ),
+        }
+
+    if any(term in sentence for term in ("breadth-first search", "bfs", "depth-first search", "dfs", "graph traversal")):
+        algorithm = "bfs" if any(
+            term in sentence for term in ("breadth-first search", "bfs")
+        ) else "dfs"
+        return {
+            "type": "graph",
+            "title": "Graph traversal",
+            "nodes": ["A", "B", "C", "D", "E", "F"],
+            "edges": [
+                {"from": "A", "to": "B"},
+                {"from": "A", "to": "C"},
+                {"from": "B", "to": "D"},
+                {"from": "B", "to": "E"},
+                {"from": "C", "to": "F"},
+            ],
+            "algorithm": algorithm,
+            "start": "A",
+        }
+
+    if any(term in sentence for term in ("http request", "api request", "request and response", "client-server", "rest api")):
+        return {
+            "type": "exchange",
+            "title": "A client-server request",
+            "actors": ["Browser", "Server", "Database"],
+            "messages": [
+                {"from": "Browser", "to": "Server", "label": "Request"},
+                {"from": "Server", "to": "Database", "label": "Query"},
+                {"from": "Database", "to": "Server", "label": "Result", "reply": True},
+                {"from": "Server", "to": "Browser", "label": "Response", "reply": True},
+            ],
+        }
+
+    if any(term in sentence for term in ("load balancer", "load balancing")):
+        return {
+            "type": "balancer",
+            "title": "Distributing incoming traffic",
+        }
+
+    if any(term in sentence for term in ("consistent hashing", "hash ring")):
+        return {
+            "type": "ring",
+            "title": "Consistent hashing",
+        }
+
+    if any(term in sentence for term in ("deployment pipeline", "ci/cd", "continuous integration", "continuous delivery")):
+        return {
+            "type": "pipeline",
+            "title": "A CI/CD pipeline",
+            "stages": [
+                {"name": "Build", "jobs": ["Compile"]},
+                {"name": "Test", "jobs": ["Unit tests", "Integration tests"]},
+                {"name": "Deploy", "jobs": ["Release"]},
+            ],
+        }
+
+    if any(term in sentence for term in ("canary release", "blue-green deployment", "deployment strategy")):
+        return {
+            "type": "deploy",
+            "title": "A staged deployment",
+            "strategy": "canary",
+            "instances": 4,
+            "from": "v1",
+            "to": "v2",
+        }
+
+    if any(term in sentence for term in ("system architecture", "software architecture", "three-tier architecture")):
+        return {
+            "type": "architecture",
+            "title": "A web application architecture",
+            "nodes": [
+                {"id": "client", "label": "Client", "kind": "client"},
+                {"id": "server", "label": "Application server", "kind": "server"},
+                {"id": "database", "label": "Database", "kind": "database"},
+            ],
+            "links": [
+                {"from": "client", "to": "server"},
+                {"from": "server", "to": "database"},
+            ],
+            "path": ["client", "server", "database"],
+        }
+
+    if any(term in sentence for term in ("python code", "for loop", "variable", "function definition", "execute this code")):
+        return {
+            "type": "code",
+            "title": "A small Python program",
+            "language": "python",
+            "lines": [
+                "total = 0",
+                "for n in [1, 2, 3]:",
+                "    total += n",
+                "print(total)",
+            ],
+            "steps": [
+                {"line": 1, "note": "Start the total at zero"},
+                {"line": 2, "note": "Visit each number"},
+                {"line": 3, "note": "Add the current number"},
+                {"line": 4, "note": "Display the total", "output": "6"},
+            ],
+        }
+
+    if any(term in sentence for term in ("sql table", "database table", "rows and columns", "select query")):
+        return {
+            "type": "table",
+            "title": "Selecting rows from a table",
+            "name": "users",
+            "columns": ["id", "name", "age", "city"],
+            "rows": [
+                [1, "Ana", 31, "Lima"],
+                [2, "Ben", 24, "Nairobi"],
+                [3, "Cara", 29, "Accra"],
+            ],
+            "query": {
+                "kind": "select",
+                "columns": ["name", "age"],
+                "where": {"column": "age", "op": ">", "value": 27},
+            },
+        }
+
+    if any(term in sentence for term in ("array", "list of elements", "element at index")):
+        return {
+            "type": "array",
+            "title": "An array of values",
+            "values": [5, 2, 9, 1, 7, 3],
+            "algorithm": "bubble-sort",
+        }
+
+    return None
+
+
 def scene_planner_node(
     state: VideoState,
     *,
@@ -936,7 +1197,12 @@ def scene_planner_node(
         if use_semantic_graph:
             visual = _semantic_visual(narration)
 
-        # Preserve the existing deterministic visual planner as the fallback.
+        # Prefer a topic-relevant Remotion library visual for CS scenes.
+        # Keep the existing specialised physics/science paths untouched.
+        if visual is None and state.get("category", "cs") == "cs":
+            visual = _deterministic_library_visual(topic, narration)
+
+        # Preserve the relationship diagram as the fallback.
         if visual is None:
             visual = _structured_visual(narration)
 
