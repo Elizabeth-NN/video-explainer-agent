@@ -1684,7 +1684,71 @@ def test_physics_research_fallback_plans_requested_concepts(monkeypatch):
     assert "kinematics" in queries
     assert "free fall" in queries
     assert "projectile motion" in queries
-    assert "gravitational potential energy" in queries
+    assert any(
+        "gravitational potential energy" in query and "mgh" in query
+        for query in queries
+    )
+    assert any("mgh" in query for query in queries)
+
+
+def test_physics_plan_preserves_concept_searches_when_gemini_returns_generic_plan(
+    monkeypatch,
+):
+    from app.graph.nodes import plan_research
+
+    monkeypatch.setattr(
+        "app.graph.nodes._gemini_json",
+        lambda *args, **kwargs: {
+            "search_queries": ["Physics", "Motion"],
+            "key_questions": ["What is physics?"],
+            "required_concepts": [
+                {"concept": "General physics", "keywords": ["physics", "motion"]}
+            ],
+        },
+    )
+
+    plan = plan_research(
+        "Physics fundamentals: Newton's second law, kinematics, "
+        "free fall, projectile motion, and potential energy"
+    )
+
+    queries = {query.casefold() for query in plan["search_queries"]}
+    concepts = {item["concept"] for item in plan["required_concepts"]}
+
+    assert {
+        "newton's laws of motion",
+        "kinematics",
+        "free fall",
+        "projectile motion",
+    }.issubset(queries)
+    assert any(
+        "gravitational potential energy" in query and "mgh" in query
+        for query in queries
+    )
+
+    assert concepts == {
+        "Newton's second law",
+        "Kinematics",
+        "Free fall",
+        "Projectile motion",
+        "Gravitational potential energy",
+    }
+    assert len(plan["key_questions"]) == 5
+
+
+def test_physics_relevance_requires_summary_evidence_not_just_title():
+    from app.graph.nodes import is_relevant_source
+
+    topic = (
+        "Physics fundamentals: Newton's second law, kinematics, "
+        "free fall, projectile motion, and potential energy"
+    )
+
+    assert not is_relevant_source(
+        topic,
+        "Gravitational potential energy",
+        "This article introduces a subject and its historical background.",
+    )
 
 
 def test_physics_relevance_accepts_concept_specific_articles():
@@ -1736,11 +1800,11 @@ def test_multi_concept_physics_fallback_covers_all_requested_concepts():
         )
     )
     state["required_concepts"] = [
-        {"concept": "Newton's second law", "keywords": ["newton", "force", "mass", "acceleration"]},
-        {"concept": "Kinematics", "keywords": ["kinematics", "position", "displacement", "velocity"]},
-        {"concept": "Free fall", "keywords": ["free fall", "gravity", "falling object"]},
-        {"concept": "Projectile motion", "keywords": ["projectile", "trajectory", "launch angle"]},
-        {"concept": "Gravitational potential energy", "keywords": ["potential energy", "height", "mgh"]},
+        {"concept": "Newton's laws", "keywords": ["newton", "force", "mass", "acceleration"]},
+        {"concept": "Motion", "keywords": ["kinematics", "position", "displacement", "velocity"]},
+        {"concept": "Falling objects", "keywords": ["free fall", "gravity", "falling object"]},
+        {"concept": "Projectile trajectories", "keywords": ["projectile", "trajectory", "launch angle"]},
+        {"concept": "Potential energy", "keywords": ["potential energy", "height", "mgh"]},
     ]
     state["research_sources"] = [
         {
@@ -1789,6 +1853,8 @@ def test_multi_concept_physics_fallback_covers_all_requested_concepts():
 
     assert script.startswith("Imagine")
     assert 80 <= len(script.split()) <= 180
+    assert "mgh" in lower
+    assert "mass, gravity, and height" in lower
     for phrase in (
         "newton's second law",
         "kinematics",

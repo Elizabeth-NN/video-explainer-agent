@@ -453,7 +453,7 @@ def _call_gemini_planner(
 
 
 def _split_script(script: str) -> list[str]:
-    """Split narration into sentence-based segments with a word limit."""
+    """Split at sentence boundaries whenever a sentence is reasonably sized."""
     sentences = re.split(r"(?<=[.!?])\s+", script.strip())
     segments = []
 
@@ -463,12 +463,17 @@ def _split_script(script: str) -> list[str]:
         if not words:
             continue
 
+        # Preserve complete sentences up to 40 words to avoid broken narration.
+        if len(words) <= max(MAX_WORDS_PER_SCENE, 40):
+            segments.append(" ".join(words))
+            continue
+
+        # Only unusually long sentences need chunking.
         for start in range(0, len(words), MAX_WORDS_PER_SCENE):
             chunk = words[start : start + MAX_WORDS_PER_SCENE]
             segments.append(" ".join(chunk))
 
     return segments
-
 
 def _visual_description(topic: str, narration: str) -> str:
     """Describe a scene using its topic and actual narration."""
@@ -667,26 +672,38 @@ def _visual_description(topic: str, narration: str) -> str:
 
 
 def _physics_visual_description(topic: str, narration: str) -> str:
-    """Describe a physics scene without inventing measurements or claims."""
-    text = f"{topic} {narration}".lower()
+    """Describe the physics concept actually discussed in this scene."""
+    text = narration.casefold()
 
     if re.search(
-        r"projectile|trajectory|launched|thrown|thrown object",
+        r"five connected ideas|five physics ideas|connecting .* ideas|"
+        r"together, (?:these concepts|these ideas|they link)",
         text,
     ):
-        focus = "projectile trajectory and the role of gravity"
-    elif re.search(r"force|newton|free.body|friction|tension", text):
+        focus = "an overview connecting forces, motion, and energy"
+    elif re.search(
+        r"projectile|trajectory|launched|thrown|"
+        r"horizontal.*vertical|vertical.*horizontal",
+        text,
+    ):
+        focus = "projectile trajectory with horizontal and vertical motion"
+    elif re.search(r"free fall|falling object", text):
+        focus = "an object accelerating under gravity during free fall"
+    elif re.search(
+        r"potential energy|gravitational potential|mgh|stored energy|"
+        r"height can represent",
+        text,
+    ):
+        focus = "gravitational potential energy and the role of height"
+    elif re.search(r"kinematics|velocity|displacement|speed|position", text):
+        focus = "kinematics quantities describing position and motion"
+    elif re.search(r"force|newton|free.body|friction|tension|acceleration", text):
         focus = "the forces and motion relationships explained"
-    elif re.search(
-        r"energy|kinetic|potential energy|work done|power",
-        text,
-    ):
+    elif re.search(r"energy|kinetic|work done|power", text):
         focus = "the energy transfers or transformations explained"
-    elif re.search(
-        r"velocity|acceleration|displacement|speed|position",
-        text,
-    ):
-        focus = "the kinematics quantities and motion described"
+    elif re.search(r"projectile|trajectory", topic.casefold()):
+        # Retain a useful fallback for vague projectile-motion narration.
+        focus = "projectile trajectory and the role of gravity"
     else:
         focus = "the physical quantities and relationships explained"
 
@@ -697,7 +714,6 @@ def _physics_visual_description(topic: str, narration: str) -> str:
         f"Scene narration: {narration} "
         "Avoid invented numerical values or unsupported assumptions."
     )
-
 
 def _visual_label(text: str) -> str:
     """Create a short display label from words actually present in narration."""
