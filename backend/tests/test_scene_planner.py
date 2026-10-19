@@ -46,6 +46,68 @@ def test_physics_category_uses_physics_specific_visual_description():
     assert "gravity" not in cs_scene["visual_description"].lower()
 
 
+def test_physics_scenes_get_concept_specific_visuals():
+    from app.graph.scene_planner import scene_planner_node
+
+    cases = [
+        (
+            "Newton's second law relates net force, mass, and acceleration.",
+            "Newton's Second Law",
+            {"NET FORCE", "MASS", "ACCELERATION"},
+        ),
+        (
+            "Kinematics describes displacement and velocity over time.",
+            "Describing Motion",
+            {"INITIAL POSITION", "FINAL POSITION", "DISPLACEMENT"},
+        ),
+        (
+            "In free fall, gravity accelerates a falling object downward.",
+            "Free Fall",
+            {"FALLING OBJECT", "GRAVITY", "DOWNWARD ACCELERATION"},
+        ),
+        (
+            "A projectile follows a curved trajectory with horizontal and vertical motion.",
+            "Projectile Motion",
+            {"LAUNCH", "HORIZONTAL MOTION", "VERTICAL MOTION", "CURVED TRAJECTORY"},
+        ),
+        (
+            "Gravitational potential energy depends on mass, gravity, and height.",
+            "Gravitational Potential Energy",
+            {"HEIGHT ABOVE REFERENCE", "MASS", "GRAVITY", "POTENTIAL ENERGY"},
+        ),
+    ]
+
+    for narration, expected_title, expected_labels in cases:
+        scene = scene_planner_node({
+            "topic": "Physics fundamentals",
+            "category": "physics",
+            "script": narration,
+            "approved": True,
+        })["scenes"][0]
+
+        visual = scene["visual"]
+        assert visual["type"] == "scene-graph"
+        assert visual["title"] == expected_title
+        labels = {node["label"] for node in visual["nodes"]}
+        assert expected_labels <= labels
+        assert visual["links"]
+
+
+def test_physics_overview_gets_a_connected_concept_diagram():
+    scene = scene_planner_node({
+        "topic": "Physics fundamentals: Newton's second law, kinematics, "
+                 "free fall, projectile motion, and potential energy",
+        "category": "physics",
+        "script": "Imagine five connected ideas that explain forces, motion, and energy.",
+        "approved": True,
+    })["scenes"][0]
+
+    visual = scene["visual"]
+    assert visual["type"] == "scene-graph"
+    assert visual["title"] == "Five Connected Physics Ideas"
+    assert len(visual["nodes"]) == 5
+
+
 def test_scene_planner_does_not_plan_unapproved_script():
     result = scene_planner_node(
         {

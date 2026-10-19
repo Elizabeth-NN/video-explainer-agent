@@ -792,6 +792,203 @@ def _water_cycle_visual(narration: str) -> dict | None:
     return None
 
 
+
+def _physics_visual(topic: str, narration: str) -> dict | None:
+    """Build a concept-specific physics diagram from this scene's narration."""
+    text = narration.casefold()
+    focused_topic = topic.casefold().strip()
+
+    def graph(title, nodes, links, footnote):
+        return {
+            "type": "scene-graph",
+            "title": title,
+            "nodes": nodes,
+            "links": links,
+            "footnote": footnote,
+        }
+
+    def node(node_id, label, x, y, color):
+        return {
+            "id": node_id,
+            "label": label,
+            "x": x,
+            "y": y,
+            "size": 38,
+            "color": color,
+            "appearAt": 0.2,
+        }
+
+    def link(source, target, label, color="#4FD1C5"):
+        return {
+            "from": source,
+            "to": target,
+            "label": label,
+            "color": color,
+            "style": "solid",
+            "appearAt": 0.4,
+        }
+
+    # Overview scenes should connect the ideas instead of showing one concept.
+    if re.search(
+        r"\bfive connected ideas\b|\bfive physics ideas\b|"
+        r"\boverview of physics\b|\bthese concepts connect\b|"
+        r"\btogether, these ideas connect\b",
+        text,
+    ):
+        nodes = [
+            node("forces", "FORCES", 160, 105, "#4FD1C5"),
+            node("motion", "MOTION", 500, 105, "#F2B84B"),
+            node("gravity", "GRAVITY", 830, 105, "#E87979"),
+            node("trajectory", "TRAJECTORY", 300, 310, "#5B9BFF"),
+            node("energy", "POTENTIAL ENERGY", 700, 310, "#A78BFA"),
+        ]
+        return graph(
+            "Five Connected Physics Ideas",
+            nodes,
+            [
+                link("forces", "motion", "CHANGE MOTION"),
+                link("gravity", "trajectory", "SHAPES PATH"),
+                link("gravity", "energy", "RELATES TO HEIGHT"),
+                link("motion", "trajectory", "DESCRIBES"),
+            ],
+            "Conceptual connections; not a numerical model.",
+        )
+
+    # Projectile motion: distinguish horizontal and vertical motion.
+    if re.search(
+        r"\bprojectile\b|\btrajectory\b|\bhorizontal and vertical\b|"
+        r"\bvertical and horizontal\b|\bthrown object\b|"
+        r"\bobject is launched\b|\bcurved path\b",
+        text,
+    ):
+        return graph(
+            "Projectile Motion",
+            [
+                node("launch", "LAUNCH", 140, 210, "#F2B84B"),
+                node("horizontal", "HORIZONTAL MOTION", 440, 100, "#4FD1C5"),
+                node("vertical", "VERTICAL MOTION", 440, 320, "#E87979"),
+                node("gravity", "GRAVITY", 640, 400, "#F2B84B"),
+                node("path", "CURVED TRAJECTORY", 850, 210, "#5B9BFF"),
+            ],
+            [
+                link("launch", "horizontal", "HORIZONTAL COMPONENT"),
+                link("launch", "vertical", "VERTICAL COMPONENT"),
+                link("gravity", "vertical", "ACCELERATES"),
+                link("horizontal", "path", "COMBINES"),
+                link("vertical", "path", "COMBINES"),
+            ],
+            "Idealized trajectory; no launch speed or angle assumed.",
+        )
+
+    # Free fall: gravity changes downward velocity.
+    if re.search(
+        r"\bfree fall\b|\bfalling object\b|\bdropped object\b|"
+        r"\bfalls freely\b|\bfalls under gravity\b",
+        text,
+    ):
+        return graph(
+            "Free Fall",
+            [
+                node("object", "FALLING OBJECT", 180, 110, "#4FD1C5"),
+                node("gravity", "GRAVITY", 500, 110, "#F2B84B"),
+                node("acceleration", "DOWNWARD ACCELERATION", 500, 320, "#E87979"),
+                node("velocity", "VELOCITY", 820, 320, "#5B9BFF"),
+            ],
+            [
+                link("gravity", "acceleration", "CAUSES"),
+                link("acceleration", "velocity", "CHANGES"),
+                link("object", "velocity", "MOTION"),
+            ],
+            "Air resistance is neglected in the ideal free-fall model.",
+        )
+
+    # Gravitational potential energy: make height and mass explicit.
+    if re.search(
+        r"\bpotential energy\b|\bgravitational potential\b|\bmgh\b|"
+        r"\bstored energy\b",
+        text,
+    ):
+        return graph(
+            "Gravitational Potential Energy",
+            [
+                node("height", "HEIGHT ABOVE REFERENCE", 180, 110, "#4FD1C5"),
+                node("mass", "MASS", 180, 320, "#F2B84B"),
+                node("gravity", "GRAVITY", 500, 320, "#5B9BFF"),
+                node("energy", "POTENTIAL ENERGY", 820, 210, "#A78BFA"),
+            ],
+            [
+                link("height", "energy", "AFFECTS"),
+                link("mass", "energy", "AFFECTS"),
+                link("gravity", "energy", "AFFECTS"),
+            ],
+            "Gravitational potential energy depends on mass, gravity, and height.",
+        )
+
+    # Newton's second law: force, mass, and acceleration.
+    if re.search(
+        r"\bnewton(?:'s)? second law\b|\bnet force\b|"
+        r"\bforce.*\bmass\b.*\bacceleration\b|"
+        r"\bacceleration.*\bnet force\b|"
+        r"\bforces come first\b",
+        text,
+    ):
+        return graph(
+            "Newton's Second Law",
+            [
+                node("force", "NET FORCE", 180, 110, "#4FD1C5"),
+                node("mass", "MASS", 180, 320, "#F2B84B"),
+                node("acceleration", "ACCELERATION", 820, 210, "#A78BFA"),
+            ],
+            [
+                link("force", "acceleration", "PRODUCES"),
+                link("mass", "acceleration", "AFFECTS"),
+            ],
+            "For a fixed mass, greater net force produces greater acceleration.",
+        )
+
+    # Kinematics: represent change in position without inventing values.
+    if re.search(
+        r"\bkinematics\b|\bdisplacement\b|\bvelocity\b|"
+        r"\bposition over time\b|\bchange in position\b|"
+        r"\bnext, describe motion\b",
+        text,
+    ):
+        return graph(
+            "Describing Motion",
+            [
+                node("initial", "INITIAL POSITION", 160, 210, "#4FD1C5"),
+                node("final", "FINAL POSITION", 500, 100, "#F2B84B"),
+                node("time", "ELAPSED TIME", 500, 320, "#5B9BFF"),
+                node("displacement", "DISPLACEMENT", 830, 210, "#A78BFA"),
+            ],
+            [
+                link("initial", "displacement", "COMPARES WITH"),
+                link("final", "displacement", "CHANGE IN POSITION"),
+                link("time", "displacement", "OVER A TIME INTERVAL"),
+            ],
+            "Conceptual diagram; no numerical measurements assumed.",
+        )
+
+    # A single-concept topic may be vague in one scene. Do not use this
+    # fallback for a broad topic that lists several different concepts.
+    if re.fullmatch(r"(?:how does |how to understand )?projectile motion", focused_topic):
+        return graph(
+            "Projectile Motion",
+            [
+                node("launch", "LAUNCH", 160, 210, "#F2B84B"),
+                node("gravity", "GRAVITY", 500, 100, "#E87979"),
+                node("path", "CURVED PATH", 820, 210, "#5B9BFF"),
+            ],
+            [
+                link("launch", "path", "STARTS MOTION"),
+                link("gravity", "path", "BENDS TRAJECTORY"),
+            ],
+            "Idealized projectile motion.",
+        )
+
+    return None
+
+
 def _structured_visual(narration: str) -> dict | None:
     """Build a positioned scene graph from an explicit narration relationship.
 
@@ -1218,7 +1415,12 @@ def scene_planner_node(
         if visual is None and state.get("category", "cs") == "cs":
             visual = _deterministic_library_visual(topic, narration)
 
-        # Preserve the relationship diagram as the fallback.
+        # Give physics scenes a concept-specific diagram before the
+        # generic relationship parser gets a chance to create a weak match.
+        if visual is None and state.get("category", "cs") == "physics":
+            visual = _physics_visual(topic, narration)
+
+        # Preserve the existing relationship diagram as the next fallback.
         if visual is None:
             visual = _structured_visual(narration)
 
