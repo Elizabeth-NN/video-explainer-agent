@@ -4,6 +4,8 @@ from pathlib import Path
 
 from app.graph.workflow import build_graph
 from app.services.narration import DEFAULT_VOICE, generate_narration
+from app.services.remotion_renderer import render_remotion_video
+from app.services.physics_video_renderer import render_projectile_motion_clip
 from app.services.video_renderer import render_video
 
 
@@ -47,6 +49,12 @@ def main():
         "--video",
         action="store_true",
         help="Generate narration and render an MP4 video.",
+    )
+    parser.add_argument(
+        "--renderer",
+        choices=("remotion", "ffmpeg"),
+        default="remotion",
+        help="Video renderer: Remotion by default, or legacy FFmpeg.",
     )
     parser.add_argument(
         "--voice",
@@ -157,19 +165,49 @@ def main():
             )
             print("Audio manifest: manifest.json")
 
+            # Only attach Manim clips for supported Physics topics.
+            # All other scenes retain their existing Remotion visuals.
+            if (
+                args.video
+                and args.renderer == "remotion"
+                and args.category == "physics"
+            ):
+                clip_result = render_projectile_motion_clip(
+                    manifest_path=Path(args.output_dir) / "manifest.json",
+                    output_dir=Path(args.output_dir) / "physics_clips",
+                )
+                if clip_result["status"] == "rendered":
+                    print(
+                        "Manim clip attached to scene "
+                        f"{clip_result['scene_number']}: "
+                        f"{clip_result['clip_file']}"
+                    )
+                else:
+                    print(
+                        "Manim clip skipped: "
+                        f"{clip_result['reason']}"
+                    )
+
             if args.video:
                 print("\n=== RENDERING MP4 VIDEO ===")
                 output_path = Path(args.output_dir) / "explainer.mp4"
 
-                video = render_video(
-                    scenes=scenes,
-                    narration_manifest_path=(
-                        Path(args.output_dir) / "manifest.json"
-                    ),
-                    output_path=output_path,
-                    topic=args.topic,
-                )
+                if args.renderer == "remotion":
+                    video = render_remotion_video(
+                        manifest_path=Path(args.output_dir) / "manifest.json",
+                        output_path=output_path,
+                    )
+                else:
+                    video = render_video(
+                        scenes=scenes,
+                        narration_manifest_path=(
+                            Path(args.output_dir) / "manifest.json"
+                        ),
+                        output_path=output_path,
+                        topic=args.topic,
+                    )
 
+                print(f"Renderer: {video.get('renderer', args.renderer)}")
                 print(f"Video: {video['output_file']}")
                 print(
                     f"Resolution: {video['width']}x{video['height']} "
