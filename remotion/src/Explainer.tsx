@@ -121,6 +121,7 @@ export type ExplainerScene = {
 
 export type ExplainerProps = {
   topic: string;
+  category?: "cs" | "physics";
   fps: number;
   width: number;
   height: number;
@@ -1133,6 +1134,174 @@ const fallbackSpec = (scene: ExplainerScene): VisualSpec => {
   };
 };
 
+/** Physics fallback for legacy or invalid planned visuals. */
+const physicsFallbackSpec = (
+  scene: ExplainerScene,
+  topic: string,
+): VisualSpec => {
+  const text = `${topic} ${scene.narration} ${scene.visualDescription || ""}`;
+
+  if (/projectile|launch angle|trajectory/i.test(text)) {
+    return {
+      type: "flow",
+      title: "Projectile Motion",
+      nodes: [
+        { label: "LAUNCH SPEED", icon: "bolt", color: "gold" },
+        { label: "GRAVITY", icon: "dot", color: "purple" },
+        { label: "TRAJECTORY", icon: "check", color: "teal" },
+      ],
+      footnote: "Gravity changes the projectile's vertical motion",
+    };
+  }
+
+  if (/free fall|falling object|falls freely/i.test(text)) {
+    return {
+      type: "flow",
+      title: "Free Fall",
+      nodes: [
+        { label: "GRAVITY", icon: "dot", color: "purple" },
+        { label: "FALLING OBJECT", icon: "gear", color: "gold" },
+        { label: "CHANGING SPEED", icon: "bolt", color: "teal" },
+      ],
+    };
+  }
+
+  if (/potential energy|gravitational energy/i.test(text)) {
+    return {
+      type: "flow",
+      title: "Gravitational Potential Energy",
+      nodes: [
+        { label: "MASS", icon: "dot", color: "teal" },
+        { label: "HEIGHT", icon: "gear", color: "gold" },
+        { label: "STORED ENERGY", icon: "bolt", color: "purple" },
+      ],
+      footnote: "Potential energy depends on mass, gravity, and height",
+    };
+  }
+
+  if (/newton.?s second law|net force|force.*mass|mass.*acceleration/i.test(text)) {
+    return {
+      type: "flow",
+      title: "Newton's Second Law",
+      nodes: [
+        { label: "NET FORCE", icon: "bolt", color: "gold" },
+        { label: "MASS", icon: "dot", color: "teal" },
+        { label: "ACCELERATION", icon: "gear", color: "purple" },
+      ],
+      footnote: "For a given mass, greater net force produces greater acceleration",
+    };
+  }
+
+  if (/kinematics|velocity|displacement|acceleration/i.test(text)) {
+    return {
+      type: "flow",
+      title: "Describing Motion",
+      nodes: [
+        { label: "POSITION", icon: "dot", color: "teal" },
+        { label: "VELOCITY", icon: "bolt", color: "gold" },
+        { label: "ACCELERATION", icon: "gear", color: "purple" },
+      ],
+    };
+  }
+
+  const extracted = fallbackSpec(scene);
+  if (
+    extracted.type === "flow" &&
+    !extracted.nodes.every((node) =>
+      ["INPUT", "PROCESS", "OUTCOME"].includes(node.label),
+    )
+  ) {
+    return { ...extracted, title: extracted.title || "Physics Concept" };
+  }
+
+  return {
+    type: "flow",
+    title: "Physics Concept",
+    nodes: [
+      { label: "PHYSICAL SYSTEM", icon: "dot", color: "teal" },
+      { label: "INTERACTION", icon: "gear", color: "gold" },
+      { label: "MEASURABLE CHANGE", icon: "check", color: "purple" },
+    ],
+  };
+};
+
+/** CS fallback for legacy or invalid planned visuals. */
+const csFallbackSpec = (
+  scene: ExplainerScene,
+  topic: string,
+): VisualSpec => {
+  const text = `${topic} ${scene.narration} ${scene.visualDescription || ""}`;
+
+  if (/sort(?:ing)?|search(?:ing)?|algorithm/i.test(text)) {
+    return {
+      type: "flow",
+      title: "Algorithm Execution",
+      nodes: [
+        { label: "DATA", icon: "dot", color: "teal" },
+        { label: "ALGORITHM", icon: "gear", color: "gold" },
+        { label: "RESULT", icon: "check", color: "purple" },
+      ],
+    };
+  }
+
+  if (/database|query|records|tables/i.test(text)) {
+    return {
+      type: "flow",
+      title: "Database Query",
+      nodes: [
+        { label: "QUERY", icon: "dot", color: "gold" },
+        { label: "DATABASE", icon: "gear", color: "teal" },
+        { label: "RESULTS", icon: "check", color: "purple" },
+      ],
+    };
+  }
+
+  if (/client|server|api|network|request|response/i.test(text)) {
+    return {
+      type: "flow",
+      title: "Request and Response",
+      nodes: [
+        { label: "CLIENT REQUEST", icon: "dot", color: "teal" },
+        { label: "SERVER LOGIC", icon: "gear", color: "gold" },
+        { label: "RESPONSE", icon: "check", color: "purple" },
+      ],
+    };
+  }
+
+  if (/machine learning|training data|model prediction|neural network/i.test(text)) {
+    return {
+      type: "flow",
+      title: "Machine Learning",
+      nodes: [
+        { label: "TRAINING DATA", icon: "dot", color: "teal" },
+        { label: "MODEL", icon: "gear", color: "gold" },
+        { label: "PREDICTION", icon: "check", color: "purple" },
+      ],
+    };
+  }
+
+  const extracted = fallbackSpec(scene);
+  if (
+    extracted.type === "flow" &&
+    !extracted.nodes.every((node) =>
+      ["INPUT", "PROCESS", "OUTCOME"].includes(node.label),
+    )
+  ) {
+    return { ...extracted, title: extracted.title || "Computing Concept" };
+  }
+
+  return {
+    type: "flow",
+    title: "Computing Concept",
+    nodes: [
+      { label: "DATA OR CODE", icon: "dot", color: "teal" },
+      { label: "COMPUTATION", icon: "gear", color: "gold" },
+      { label: "RESULT", icon: "check", color: "purple" },
+    ],
+  };
+};
+
+
 /**
  * Choose solar illustrations by the actual concept being narrated,
  * rather than cycling through the topic's diagrams by scene number.
@@ -1425,7 +1594,11 @@ export const resolveVisual = (raw: unknown): VisualSpec | null => {
   return normalize(data as VisualSpec);
 };
 
-const resolveSpec = (scene: ExplainerScene, topic: string): VisualSpec => {
+export const resolveVisualSpec = (
+  scene: ExplainerScene,
+  topic: string,
+  category?: "cs" | "physics",
+): VisualSpec => {
   const planned = resolveVisual(scene.visual);
   if (planned) return planned;
 
@@ -1448,6 +1621,12 @@ const resolveSpec = (scene: ExplainerScene, topic: string): VisualSpec => {
   );
   if (vaccineTopic) return vaccineSpecForScene(scene);
 
+  // When a category is known, use a relevant category-specific fallback
+  // instead of cycling through a topic preset by scene number.
+  if (category === "physics") return physicsFallbackSpec(scene, topic);
+  if (category === "cs") return csFallbackSpec(scene, topic);
+
+  // Backwards compatibility for older manifests without a category.
   const preset = PRESETS.find((p) => p.match.test(topic));
   if (preset) return preset.specs[(scene.sceneNumber - 1) % preset.specs.length];
 
@@ -1519,11 +1698,17 @@ const Caption: React.FC<{ text: string; duration: number }> = ({ text, duration 
   );
 };
 
-const Scene: React.FC<{ scene: ExplainerScene; topic: string; totalScenes: number }> = ({
-  scene, topic, totalScenes,
-}) => {
+const Scene: React.FC<{
+  scene: ExplainerScene;
+  topic: string;
+  category?: "cs" | "physics";
+  totalScenes: number;
+}> = ({ scene, topic, category, totalScenes }) => {
   const { frame, s } = useT();
-  const spec = useMemo(() => resolveSpec(scene, topic), [scene, topic]);
+  const spec = useMemo(
+    () => resolveVisualSpec(scene, topic, category),
+    [scene, topic, category],
+  );
   const title = sceneTitle(spec, scene);
 
   // Fade in only; the outgoing scene stays mounted underneath for OVERLAP frames.
@@ -1615,7 +1800,9 @@ const Scene: React.FC<{ scene: ExplainerScene; topic: string; totalScenes: numbe
    Root composition
    ────────────────────────────────────────────────────────────── */
 
-export const Explainer: React.FC<ExplainerProps> = ({ topic, scenes }) => (
+export const Explainer: React.FC<ExplainerProps> = ({
+  topic, category, scenes,
+}) => (
   <AbsoluteFill style={{ backgroundColor: C.bg }}>
     {scenes.map((scene) => (
       <React.Fragment key={scene.sceneNumber}>
@@ -1624,7 +1811,12 @@ export const Explainer: React.FC<ExplainerProps> = ({ topic, scenes }) => (
           durationInFrames={scene.durationInFrames + OVERLAP}
           name={`Scene ${scene.sceneNumber}`}
         >
-          <Scene scene={scene} topic={topic} totalScenes={scenes.length} />
+          <Scene
+            scene={scene}
+            topic={topic}
+            category={category}
+            totalScenes={scenes.length}
+          />
         </Sequence>
         <Sequence
           from={scene.from}

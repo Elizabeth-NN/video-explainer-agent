@@ -60,11 +60,13 @@ def test_generate_narration_creates_audio_and_manifest(tmp_path: Path):
             generate_narration(
                 sample_scenes(),
                 tmp_path,
-                topic="How vaccines work",
+                topic="How algorithms work",
+                category="cs",
             )
         )
 
-    assert result["topic"] == "How vaccines work"
+    assert result["topic"] == "How algorithms work"
+    assert result["category"] == "cs"
     assert result["scene_count"] == 2
     assert result["voice"] == "en-US-JennyNeural"
     assert result["total_audio_duration_seconds"] == 5.0

@@ -179,6 +179,9 @@ if (videoCopies.length > 0) {
 
 const props = {
   topic: manifest.topic.trim(),
+  ...(manifest.category === "cs" || manifest.category === "physics"
+    ? { category: manifest.category }
+    : {}),
   fps,
   width,
   height,

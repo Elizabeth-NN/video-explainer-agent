@@ -152,6 +152,7 @@ def main():
                     output_dir=args.output_dir,
                     voice=args.voice,
                     topic=result["topic"],
+                    category=args.category,
                 )
             )
             print(f"Audio directory: {args.output_dir}")
