@@ -799,11 +799,28 @@ def _physics_visual(topic: str, narration: str) -> dict | None:
     focused_topic = topic.casefold().strip()
 
     def graph(title, nodes, links, footnote):
+        # Reveal concepts first, then explain their relationships.
+        node_step = 0.24
+        link_step = 0.22
+        first_node_at = 0.2
+
+        staged_nodes = [
+            {**item, "appearAt": first_node_at + index * node_step}
+            for index, item in enumerate(nodes)
+        ]
+
+        first_link_at = first_node_at + len(staged_nodes) * node_step
+
+        staged_links = [
+            {**item, "appearAt": first_link_at + index * link_step}
+            for index, item in enumerate(links)
+        ]
+
         return {
             "type": "scene-graph",
             "title": title,
-            "nodes": nodes,
-            "links": links,
+            "nodes": staged_nodes,
+            "links": staged_links,
             "footnote": footnote,
         }
 

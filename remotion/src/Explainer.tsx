@@ -942,7 +942,14 @@ const SceneGraphDiagram: React.FC<{
 
       <Footnote
         text={spec.footnote}
-        at={s(0.5) + spec.nodes.length * s(0.18) + s(0.5)}
+        at={s(Math.max(
+          0.5 + spec.nodes.length * 0.18 + 0.5,
+          ...spec.nodes.map((node, index) =>
+            (node.appearAt ?? 0.2 + index * 0.18) + 0.45
+          ),
+          ...spec.links.map((link) => (link.appearAt ?? 0.4) + 0.55
+          ),
+        ) + 0.15)}
       />
     </>
   );
