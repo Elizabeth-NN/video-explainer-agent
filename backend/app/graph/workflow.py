@@ -82,6 +82,31 @@ def insufficient_research_node(state: VideoState) -> dict:
     }
 
 
+
+def _gemini_writer_with_fallback(state: VideoState) -> dict:
+    """Use Gemini when available; otherwise use the deterministic writer."""
+    try:
+        return gemini_scriptwriter_node(state)
+    except (RuntimeError, ImportError) as exc:
+        print(
+            "Gemini writer unavailable; using deterministic writer: "
+            f"{exc}"
+        )
+        return scriptwriter_node(state)
+
+
+def _gemini_critic_with_fallback(state: VideoState) -> dict:
+    """Use Gemini review when available; otherwise use the deterministic critic."""
+    try:
+        return gemini_critic_node(state)
+    except (RuntimeError, ImportError) as exc:
+        print(
+            "Gemini critic unavailable; using deterministic critic: "
+            f"{exc}"
+        )
+        return critic_node(state)
+
+
 def build_graph(
     checkpointer=None,
     use_llm: bool = False,
@@ -91,8 +116,8 @@ def build_graph(
     """Build the graph with Wikipedia-first, bounded Tavily fallback."""
     graph = StateGraph(VideoState)
 
-    writer = gemini_scriptwriter_node if use_llm else scriptwriter_node
-    critic = gemini_critic_node if use_llm else critic_node
+    writer = _gemini_writer_with_fallback if use_llm else scriptwriter_node
+    critic = _gemini_critic_with_fallback if use_llm else critic_node
 
     graph.add_node("research", research_node)
     graph.add_node("tavily", tavily_research_node)

@@ -1953,3 +1953,113 @@ def test_wikipedia_get_retries_http_429(monkeypatch):
     assert result is successful
     assert len(calls) == 2
     assert sleeps == [0]
+
+def test_gemini_writer_failure_uses_deterministic_writer():
+    from unittest.mock import patch
+
+    from app.graph.workflow import build_graph
+
+    research_result = {
+        "research_quality": "adequate",
+        "research_sources": [
+            {
+                "title": "Vaccine overview",
+                "url": "https://example.com/vaccines",
+                "summary": "Vaccines train the immune system.",
+            },
+            {
+                "title": "Immune response",
+                "url": "https://example.com/immunity",
+                "summary": "The immune system recognizes pathogens.",
+            },
+        ],
+        "research_notes": ["Two supporting sources were retrieved."],
+    }
+
+    with (
+        patch(
+            "app.graph.workflow.research_node",
+            return_value=research_result,
+        ),
+        patch(
+            "app.graph.workflow.gemini_scriptwriter_node",
+            side_effect=RuntimeError("Simulated Gemini outage"),
+        ),
+        patch(
+            "app.graph.workflow.scriptwriter_node",
+            return_value={
+                "script": "Imagine vaccines prepare the immune system."
+            },
+        ) as fallback_writer,
+        patch(
+            "app.graph.workflow.gemini_critic_node",
+            return_value={"approved": True, "critique": "Approved."},
+        ),
+        patch("app.graph.workflow.scene_planner_node", return_value={}),
+    ):
+        result = build_graph(use_llm=True).invoke(
+            initial_state("How vaccines work")
+        )
+
+    fallback_writer.assert_called_once()
+    assert result["script"] == (
+        "Imagine vaccines prepare the immune system."
+    )
+    assert result["approved"] is True
+
+
+def test_gemini_critic_failure_uses_deterministic_critic():
+    from unittest.mock import patch
+
+    from app.graph.workflow import build_graph
+
+    research_result = {
+        "research_quality": "adequate",
+        "research_sources": [
+            {
+                "title": "Vaccine overview",
+                "url": "https://example.com/vaccines",
+                "summary": "Vaccines train the immune system.",
+            },
+            {
+                "title": "Immune response",
+                "url": "https://example.com/immunity",
+                "summary": "The immune system recognizes pathogens.",
+            },
+        ],
+        "research_notes": ["Two supporting sources were retrieved."],
+    }
+
+    with (
+        patch(
+            "app.graph.workflow.research_node",
+            return_value=research_result,
+        ),
+        patch(
+            "app.graph.workflow.gemini_scriptwriter_node",
+            return_value={
+                "script": "Imagine vaccines prepare the immune system."
+            },
+        ),
+        patch(
+            "app.graph.workflow.gemini_critic_node",
+            side_effect=RuntimeError("Simulated Gemini outage"),
+        ),
+        patch(
+            "app.graph.workflow.critic_node",
+            return_value={
+                "approved": True,
+                "critique": "Deterministic review approved.",
+                "critic_categories": [],
+                "research_gaps": [],
+            },
+        ) as fallback_critic,
+        patch("app.graph.workflow.scene_planner_node", return_value={}),
+    ):
+        result = build_graph(use_llm=True).invoke(
+            initial_state("How vaccines work")
+        )
+
+    fallback_critic.assert_called_once()
+    assert result["approved"] is True
+    assert "Deterministic review approved." in result["critique"]
