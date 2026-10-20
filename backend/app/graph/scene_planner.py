@@ -1122,6 +1122,45 @@ def _semantic_visual(narration: str) -> dict | None:
         return None
 
 
+def _binary_search_phase(sentence: str) -> tuple[str, int]:
+    """Determine the binary-search visual phase from narration."""
+    if any(term in sentence for term in (
+        "remaining half being empty",
+        "not in the array",
+        "not found",
+    )):
+        return "not-found", 20
+
+    if any(term in sentence for term in (
+        "eliminated",
+        "eliminate the half",
+        "cannot exist",
+        "remaining half",
+        "search continues",
+        "repeating this",
+        "narrowing down",
+        "dividing the list in half",
+    )):
+        return "elimination", 25
+
+    if any(term in sentence for term in (
+        "target value is found",
+        "target is found",
+        "target has been found",
+        "matches the middle",
+        "you are finished",
+        "two outcomes",
+    )):
+        return "found", 25
+
+    if any(term in sentence for term in (
+        "middle element",
+        "middle value",
+    )):
+        return "midpoint", 25
+
+    return "overview", 25
+
 def _deterministic_library_visual(
     topic: str,
     narration: str,
@@ -1152,45 +1191,7 @@ def _deterministic_library_visual(
     )
 
     if is_binary_search_topic:
-        # A failed search takes priority over the general search phases.
-        if any(term in sentence for term in (
-            "remaining half being empty",
-            "not in the array",
-            "not found",
-        )):
-            phase, target = "not-found", 20
-
-        # Elimination takes priority over a later mention of finding the target.
-        elif any(term in sentence for term in (
-            "eliminated",
-            "eliminate the half",
-            "cannot exist",
-            "remaining half",
-            "search continues",
-            "repeating this",
-            "narrowing down",
-            "dividing the list in half",
-        )):
-            phase, target = "elimination", 25
-
-        elif any(term in sentence for term in (
-            "target value is found",
-            "target is found",
-            "target has been found",
-            "matches the middle",
-            "you are finished",
-            "two outcomes",
-        )):
-            phase, target = "found", 25
-
-        elif any(term in sentence for term in (
-            "middle element",
-            "middle value",
-        )):
-            phase, target = "midpoint", 25
-
-        else:
-            phase, target = "overview", 25
+        phase, target = _binary_search_phase(sentence)
 
         return {
             "type": "array",
@@ -1201,7 +1202,6 @@ def _deterministic_library_visual(
             "phase": phase,
             "footnote": "Illustrative sorted array; indexes start at 0",
         }
-
     # More specific database concepts must win over generic table/code matches.
     if "index" in sentence and any(
         term in sentence for term in ("database", "query", "row", "scan")
@@ -1262,14 +1262,16 @@ def _deterministic_library_visual(
         }
 
     if "binary search" in sentence and "binary search tree" not in sentence:
+        phase, target = _binary_search_phase(sentence)
+
         return {
             "type": "array",
             "title": "Binary search",
             "values": [3, 8, 12, 19, 25, 31, 42],
             "algorithm": "binary-search",
-            "target": 25,
+            "target": target,
+            "phase": phase,
         }
-
     if any(term in sentence for term in ("bubble sort", "sorting algorithm", "sorts an array")):
         return {
             "type": "array",

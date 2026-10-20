@@ -1151,3 +1151,17 @@ def test_gemini_cannot_change_binary_search_array_or_phase(monkeypatch):
     assert visual["values"] == [3, 8, 12, 19, 25, 31, 42]
     assert visual["target"] == 25
     assert visual["phase"] == "midpoint"
+
+
+def test_narration_only_binary_search_visual_includes_phase():
+    from app.graph.scene_planner import _deterministic_library_visual
+
+    visual = _deterministic_library_visual(
+        "Arrays and searching",
+        "Binary search compares the target value to the middle element.",
+    )
+
+    assert visual is not None
+    assert visual["algorithm"] == "binary-search"
+    assert visual["phase"] == "midpoint"
+    assert visual["target"] == 25
