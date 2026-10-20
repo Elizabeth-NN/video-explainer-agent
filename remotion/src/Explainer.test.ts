@@ -94,3 +94,80 @@ test("valid planned visuals take priority over category fallbacks", () => {
 
   assert.equal(spec.title, "Planner-selected visual");
 });
+
+test("valid planned array visuals take priority over category fallbacks", () => {
+  const planned = {
+    type: "array" as const,
+    title: "Binary search",
+    values: [3, 8, 12, 19, 25, 31, 42],
+    algorithm: "binary-search" as const,
+    target: 25,
+  };
+
+  const spec = resolveVisualSpec(
+    makeScene(
+      "Binary search repeatedly checks the middle value and narrows the search range.",
+      "",
+      planned,
+    ),
+    "Computer science fundamentals",
+    "cs",
+  );
+
+  assert.equal(spec.type, "array");
+  assert.equal(spec.title, "Binary search");
+
+  if (spec.type !== "array") {
+    assert.fail("Expected the planned array visual.");
+  }
+
+  assert.deepEqual(spec.values, [3, 8, 12, 19, 25, 31, 42]);
+  assert.equal(spec.algorithm, "binary-search");
+  assert.equal(spec.target, 25);
+});
+
+test("binary-search introduction uses an array overview fallback", () => {
+  const spec = resolveVisualSpec(
+    makeScene("Imagine searching a sorted list for one target value."),
+    "How binary search works",
+    "cs",
+  );
+
+  assert.equal(spec.type, "array");
+  if (spec.type !== "array") assert.fail("Expected an array visual.");
+
+  assert.equal(spec.algorithm, "binary-search");
+  assert.equal(spec.phase, "overview");
+  assert.equal(spec.target, 25);
+});
+
+test("binary-search elimination narration selects the elimination phase", () => {
+  const spec = resolveVisualSpec(
+    makeScene(
+      "The half in which the target cannot lie is eliminated, and the search continues on the remaining half.",
+    ),
+    "How binary search works",
+    "cs",
+  );
+
+  assert.equal(spec.type, "array");
+  if (spec.type !== "array") assert.fail("Expected an array visual.");
+
+  assert.equal(spec.algorithm, "binary-search");
+  assert.equal(spec.phase, "elimination");
+});
+
+test("binary-search failure narration selects an absent target", () => {
+  const spec = resolveVisualSpec(
+    makeScene("If the search ends with the remaining half being empty, the target is not in the array."),
+    "How binary search works",
+    "cs",
+  );
+
+  assert.equal(spec.type, "array");
+  if (spec.type !== "array") assert.fail("Expected an array visual.");
+
+  assert.equal(spec.algorithm, "binary-search");
+  assert.equal(spec.phase, "not-found");
+  assert.equal(spec.target, 26);
+});

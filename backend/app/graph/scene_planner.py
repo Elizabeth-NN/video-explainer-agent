@@ -1144,48 +1144,57 @@ def _deterministic_library_visual(
     if any(term in topic_text for term in specialised_topics):
         return None
 
-    # Use the overall topic to recognize scenes that describe binary search
-    # without repeating its name in every narration sentence.
+    # Use the overall topic to recognize binary-search scenes even
+    # when individual narration sentences do not repeat the algorithm name.
     is_binary_search_topic = (
         "binary search" in topic_text
         and "binary search tree" not in topic_text
     )
 
     if is_binary_search_topic:
+        # A failed search takes priority over the general search phases.
         if any(term in sentence for term in (
             "remaining half being empty",
             "not in the array",
             "not found",
         )):
             phase, target = "not-found", 20
+
+        # Elimination takes priority over a later mention of finding the target.
         elif any(term in sentence for term in (
             "eliminated",
+            "eliminate the half",
+            "cannot exist",
             "remaining half",
             "search continues",
             "repeating this",
+            "narrowing down",
+            "dividing the list in half",
         )):
             phase, target = "elimination", 25
+
         elif any(term in sentence for term in (
-            "two outcomes",
+            "target value is found",
             "target is found",
-            "candidates become empty",
+            "target has been found",
+            "matches the middle",
+            "you are finished",
+            "two outcomes",
         )):
             phase, target = "found", 25
+
         elif any(term in sentence for term in (
             "middle element",
             "middle value",
         )):
             phase, target = "midpoint", 25
+
         else:
             phase, target = "overview", 25
 
         return {
             "type": "array",
-            "title": (
-                "Binary search: target not found"
-                if phase == "not-found"
-                else "Binary search"
-            ),
+            "title": "Binary search",
             "values": [3, 8, 12, 19, 25, 31, 42],
             "algorithm": "binary-search",
             "target": target,
@@ -1510,11 +1519,27 @@ def scene_planner_node(
             scene["processKind"] = plan["processKind"]
             validated_visual = plan.get("visual")
             if validated_visual is not None:
-                scene["visual"] = validated_visual
-                print(
-                    f"[visual-planner] scene {sn}: {plan['processKind']} "
-                    f"→ {validated_visual.get('type', '?')}"
-                )
+                existing_visual = scene.get("visual")
+
+                # Keep the deterministic binary-search visual when Gemini
+                # proposes a different algorithm or an unrelated visual.
+                # Keep deterministic binary-search visuals intact.
+                # Gemini may still describe the scene, but it must not
+                # change the array, target, algorithm, or narration phase.
+                if (
+                    isinstance(existing_visual, dict)
+                    and existing_visual.get("algorithm") == "binary-search"
+                ):
+                    print(
+                        f"[visual-planner] scene {sn}: preserving deterministic "
+                        "binary-search visual"
+                    )
+                else:
+                    scene["visual"] = validated_visual
+                    print(
+                        f"[visual-planner] scene {sn}: {plan['processKind']} "
+                        f"→ {validated_visual.get('type', '?')}"
+                    )
             else:
                 print(
                     f"[visual-planner] scene {sn}: planner visual invalid, "

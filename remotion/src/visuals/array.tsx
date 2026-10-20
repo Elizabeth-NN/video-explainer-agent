@@ -43,8 +43,19 @@ const arrayTrace = (spec: ArraySpec): ArrayFrame[] => {
       case "midpoint":
         return frames[1] ? [frames[1]] : frames;
 
-      case "elimination":
-        return frames.length > 3 ? frames.slice(1, -1) : frames;
+            case "elimination": {
+        const eliminationFrames = frames.filter(
+          (frame) =>
+            frame.pointer !== undefined ||
+            (frame.range !== undefined &&
+              frame.pointer === undefined &&
+              frame.found === undefined),
+        );
+
+        return eliminationFrames.length > 0
+          ? eliminationFrames
+          : frames.slice(0, 1);
+      }
 
       case "found": {
         const foundFrames = frames.filter(

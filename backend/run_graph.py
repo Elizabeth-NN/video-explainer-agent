@@ -1,3 +1,4 @@
+import json
 import argparse
 import asyncio
 from pathlib import Path
@@ -131,6 +132,19 @@ def main():
             print(f"Estimated duration: {duration} seconds")
             print(f"Narration: {scene['narration']}")
             print(f"Visual direction: {scene['visual_description']}")
+
+            if scene.get("concept"):
+                print(f"Visual concept: {scene['concept']}")
+
+            if scene.get("processKind"):
+                print(f"Process kind: {scene['processKind']}")
+
+            visual = scene.get("visual")
+            if isinstance(visual, dict):
+                print("Planned visual specification:")
+                print(json.dumps(visual, indent=2, ensure_ascii=False))
+            else:
+                print("Planned visual specification: none")
 
         minutes, seconds = divmod(total_duration, 60)
         print(

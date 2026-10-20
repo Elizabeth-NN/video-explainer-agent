@@ -1074,3 +1074,80 @@ def test_generic_array_mention_does_not_trigger_bubble_sort():
     assert visual is not None
     assert visual["type"] == "array"
     assert visual["algorithm"] == "none"
+
+
+def test_gemini_cannot_replace_binary_search_with_bubble_sort(monkeypatch):
+    from app.graph import scene_planner
+
+    def fake_gemini_planner(scenes, topic):
+        return [{
+            "concept": "Binary search",
+            "processKind": "algorithm",
+            "visual": {
+                "type": "array",
+                "title": "Bubble sort",
+                "values": [5, 2, 9, 1, 7, 3],
+                "algorithm": "bubble-sort",
+            },
+        }]
+
+    monkeypatch.setattr(
+        scene_planner,
+        "_call_gemini_planner",
+        fake_gemini_planner,
+    )
+
+    result = scene_planner.scene_planner_node({
+        "topic": "How binary search works",
+        "category": "cs",
+        "script": (
+            "Binary search compares the target value to the middle "
+            "element of a sorted array."
+        ),
+        "approved": True,
+    }, use_gemini_planner=True)
+
+    visual = result["scenes"][0]["visual"]
+    assert visual["type"] == "array"
+    assert visual["algorithm"] == "binary-search"
+    assert visual["phase"] == "midpoint"
+
+def test_gemini_cannot_change_binary_search_array_or_phase(monkeypatch):
+    from app.graph import scene_planner
+
+    def fake_gemini_planner(scenes, topic):
+        return [{
+            "concept": "Binary search",
+            "processKind": "algorithm",
+            "visual": {
+                "type": "array",
+                "title": "Alternative binary search",
+                "values": [1, 3, 5, 7, 9],
+                "algorithm": "binary-search",
+                "target": 7,
+            },
+        }]
+
+    monkeypatch.setattr(
+        scene_planner,
+        "_call_gemini_planner",
+        fake_gemini_planner,
+    )
+
+    result = scene_planner.scene_planner_node({
+        "topic": "How binary search works",
+        "category": "cs",
+        "script": (
+            "Binary search compares the target value to the middle "
+            "element of a sorted array."
+        ),
+        "approved": True,
+    }, use_gemini_planner=True)
+
+    visual = result["scenes"][0]["visual"]
+
+    assert visual["type"] == "array"
+    assert visual["algorithm"] == "binary-search"
+    assert visual["values"] == [3, 8, 12, 19, 25, 31, 42]
+    assert visual["target"] == 25
+    assert visual["phase"] == "midpoint"

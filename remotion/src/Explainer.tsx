@@ -1232,6 +1232,36 @@ const csFallbackSpec = (
 ): VisualSpec => {
   const text = `${topic} ${scene.narration} ${scene.visualDescription || ""}`;
 
+  // Use the existing array visual when binary-search scenes lack
+  // a valid planner-provided visual.
+  if (/binary[\s-]+search|half-interval search/i.test(text)) {
+    const narration = scene.narration.toLowerCase();
+
+    let phase: "overview" | "midpoint" | "elimination" | "found" | "not-found" =
+      "overview";
+    let target = 25;
+
+    if (/not in the array|not found|candidates become empty|remaining half being empty|absent/.test(narration)) {
+      phase = "not-found";
+      target = 26;
+    } else if (/eliminat|remaining half|cannot lie|narrow(?:s|ing)? the search range/.test(narration)) {
+      phase = "elimination";
+    } else if (/middle element|middle value|middle of the array|compares the target/.test(narration)) {
+      phase = "midpoint";
+    } else if (/target is found|found at|matches the target/.test(narration)) {
+      phase = "found";
+    }
+
+    return {
+      type: "array",
+      title: "Binary Search",
+      values: [3, 8, 12, 19, 25, 31, 42],
+      algorithm: "binary-search",
+      target,
+      phase,
+    };
+  }
+
   if (/sort(?:ing)?|search(?:ing)?|algorithm/i.test(text)) {
     return {
       type: "flow",

@@ -102,7 +102,7 @@ export const binarySearch = (input: number[], target: number): ArrayFrame[] => {
       frames.push({ values: a, range: [lo, hi], note: `${a[mid]} > ${target}: keep the left half` });
     }
   }
-  frames.push({ values: a, note: `${target} is not in the array` });
+  frames.push({ values: a, range: [lo, hi], note: `${target} is not in the array` });
   return frames;
 };
 
