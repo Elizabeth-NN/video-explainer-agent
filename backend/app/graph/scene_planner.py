@@ -463,8 +463,8 @@ def _split_script(script: str) -> list[str]:
         if not words:
             continue
 
-        # Preserve complete sentences up to 40 words to avoid broken narration.
-        if len(words) <= max(MAX_WORDS_PER_SCENE, 40):
+        # Preserve complete sentences up to 48 words to avoid broken narration.
+        if len(words) <= max(MAX_WORDS_PER_SCENE, 48):
             segments.append(" ".join(words))
             continue
 
@@ -1144,6 +1144,55 @@ def _deterministic_library_visual(
     if any(term in topic_text for term in specialised_topics):
         return None
 
+    # Use the overall topic to recognize scenes that describe binary search
+    # without repeating its name in every narration sentence.
+    is_binary_search_topic = (
+        "binary search" in topic_text
+        and "binary search tree" not in topic_text
+    )
+
+    if is_binary_search_topic:
+        if any(term in sentence for term in (
+            "remaining half being empty",
+            "not in the array",
+            "not found",
+        )):
+            phase, target = "not-found", 20
+        elif any(term in sentence for term in (
+            "eliminated",
+            "remaining half",
+            "search continues",
+            "repeating this",
+        )):
+            phase, target = "elimination", 25
+        elif any(term in sentence for term in (
+            "two outcomes",
+            "target is found",
+            "candidates become empty",
+        )):
+            phase, target = "found", 25
+        elif any(term in sentence for term in (
+            "middle element",
+            "middle value",
+        )):
+            phase, target = "midpoint", 25
+        else:
+            phase, target = "overview", 25
+
+        return {
+            "type": "array",
+            "title": (
+                "Binary search: target not found"
+                if phase == "not-found"
+                else "Binary search"
+            ),
+            "values": [3, 8, 12, 19, 25, 31, 42],
+            "algorithm": "binary-search",
+            "target": target,
+            "phase": phase,
+            "footnote": "Illustrative sorted array; indexes start at 0",
+        }
+
     # More specific database concepts must win over generic table/code matches.
     if "index" in sentence and any(
         term in sentence for term in ("database", "query", "row", "scan")
@@ -1203,7 +1252,7 @@ def _deterministic_library_visual(
             "accesses": ["A", "B", "C", "A", "D", "B"],
         }
 
-    if "binary search" in sentence:
+    if "binary search" in sentence and "binary search tree" not in sentence:
         return {
             "type": "array",
             "title": "Binary search",
@@ -1376,8 +1425,9 @@ def _deterministic_library_visual(
         return {
             "type": "array",
             "title": "An array of values",
-            "values": [5, 2, 9, 1, 7, 3],
-            "algorithm": "bubble-sort",
+            "values": [3, 8, 12, 19, 25, 31, 42],
+            "algorithm": "none",
+            "footnote": "Illustrative values; indexes start at 0",
         }
 
     return None

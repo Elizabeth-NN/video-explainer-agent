@@ -1439,6 +1439,102 @@ def _multi_concept_physics_script(
 
     return script
 
+def _binary_search_fallback_script(
+    topic: str,
+    evidence: list[str],
+) -> str | None:
+    """Build a binary-search lesson only from topic-specific evidence."""
+    if not re.search(r"\bbinary\s+search\b", topic, re.IGNORECASE):
+        return None
+
+    sentences = [
+        sentence.strip()
+        for item in evidence
+        for sentence in re.split(r"(?<=[.!?])\s+", item)
+        if sentence.strip()
+    ]
+
+    # Optimal binary search trees are a separate topic. Do not import
+    # their details into a basic binary-search explainer.
+    sentences = [
+        sentence for sentence in sentences
+        if not re.search(
+            r"\b(optimal\s+binary\s+search\s+trees?|optimal\s+bst)\b",
+            sentence,
+            re.IGNORECASE,
+        )
+    ]
+
+    definition = next(
+        (
+            sentence for sentence in sentences
+            if re.search(r"\bbinary search\b", sentence, re.IGNORECASE)
+            and re.search(r"\bsorted\b", sentence, re.IGNORECASE)
+            and re.search(r"\b(array|list|sequence)\b", sentence, re.IGNORECASE)
+        ),
+        None,
+    )
+
+    comparison = next(
+        (
+            sentence for sentence in sentences
+            if "middle element" in sentence.casefold()
+            and "target" in sentence.casefold()
+        ),
+        None,
+    )
+
+    elimination = next(
+        (
+            sentence for sentence in sentences
+            if "half" in sentence.casefold()
+            and "target" in sentence.casefold()
+            and any(
+                term in sentence.casefold()
+                for term in ("eliminated", "cannot lie", "remaining half")
+            )
+        ),
+        None,
+    )
+
+    stopping = next(
+        (
+            sentence for sentence in sentences
+            if "empty" in sentence.casefold()
+            and "target" in sentence.casefold()
+            and any(
+                term in sentence.casefold()
+                for term in ("not in", "not found", "absent")
+            )
+        ),
+        None,
+    )
+
+    # Missing core evidence should not silently produce a generic script.
+    if not all((definition, comparison, elimination, stopping)):
+        return None
+
+    parts = [
+        "Imagine searching a sorted list for one target value.",
+        definition,
+        comparison,
+        elimination,
+        stopping,
+        (
+            "The process has two outcomes: the target is found, or the "
+            "remaining candidates become empty."
+        ),
+    ]
+
+    script = re.sub(r"\s+", " ", " ".join(parts)).strip()
+    word_count = len(script.split())
+
+    if not 80 <= word_count <= 180:
+        return None
+
+    return script
+
+
 def scriptwriter_node(state: VideoState) -> dict:
     """Create a deterministic, evidence-grounded fallback script."""
     topic = state["topic"].strip()
@@ -1476,13 +1572,48 @@ def scriptwriter_node(state: VideoState) -> dict:
             "The available research sources contain no usable summaries."
         )
 
-    physics_script = _multi_concept_physics_script(
-        topic,
-        evidence,
-        state.get("required_concepts") or [],
+    category = state.get("category")
+
+    # An explicit category is authoritative. For older direct callers that
+    # omit it, infer Physics only from unmistakable Physics topic markers.
+    physics_markers = (
+        "newton's second law",
+        "newton second law",
+        "physics fundamentals",
+        "kinematics",
+        "free fall",
+        "projectile motion",
+        "gravitational potential energy",
     )
-    if physics_script:
-        return {"script": physics_script}
+    is_physics = category == "physics" or (
+        category is None
+        and any(marker in topic.casefold() for marker in physics_markers)
+    )
+
+    if is_physics:
+        physics_script = _multi_concept_physics_script(
+            topic,
+            evidence,
+            state.get("required_concepts") or [],
+        )
+        if physics_script:
+            return {"script": physics_script}
+
+    is_binary_search = bool(
+        re.search(r"\bbinary\s+search\b", topic, re.IGNORECASE)
+    )
+    is_cs_topic = category == "cs" or (category is None and is_binary_search)
+
+    if is_cs_topic and is_binary_search:
+        binary_script = _binary_search_fallback_script(topic, evidence)
+        if binary_script:
+            return {"script": binary_script}
+
+        raise RuntimeError(
+            "The fallback writer could not find sufficient binary-search "
+            "evidence for a focused script. Add relevant research rather "
+            "than using a generic fallback."
+        )
 
     topic_label = re.sub(
         r"^(how does|how do|how is|how are|how can|what is|what are)\s+",

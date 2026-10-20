@@ -978,3 +978,99 @@ def test_physics_category_does_not_select_cs_library_visual():
         "pipeline", "deploy", "table", "join", "indexscan",
         "replication", "sharding",
     }
+
+
+def test_scene_planner_keeps_43_word_sentence_intact():
+    sentence = (
+        "If they are not equal, the half in which the target cannot lie "
+        "is eliminated and the search continues on the remaining half, "
+        "again taking the middle element to compare to the target value, "
+        "and repeating this until the target value is found."
+    )
+
+    result = scene_planner_node({
+        "topic": "How binary search works",
+        "category": "cs",
+        "script": sentence,
+        "approved": True,
+    })
+
+    assert len(result["scenes"]) == 1
+    assert result["scenes"][0]["narration"] == sentence
+
+def test_deterministic_selector_chooses_tree_visual_for_binary_search_tree():
+    from app.graph.scene_planner import _deterministic_library_visual
+
+    visual = _deterministic_library_visual(
+        "Binary search tree",
+        "A binary search tree stores values in an ordered tree.",
+    )
+
+    assert visual is not None
+    assert visual["type"] == "tree"
+    assert visual["algorithm"] == "inorder"
+
+
+def test_binary_search_topic_selects_scene_specific_array_phases():
+    from app.graph.scene_planner import _deterministic_library_visual
+
+    cases = [
+        (
+            "Imagine searching a sorted list for one target value.",
+            "overview",
+            25,
+        ),
+        (
+            "In computer science, binary search finds a target in a sorted array.",
+            "overview",
+            25,
+        ),
+        (
+            "Binary search compares the target value to the middle element of the array.",
+            "midpoint",
+            25,
+        ),
+        (
+            "If they are not equal, the half is eliminated and the search "
+            "continues on the remaining half, repeating until the target is found.",
+            "elimination",
+            25,
+        ),
+        (
+            "If the search ends with the remaining half being empty, "
+            "the target is not in the array.",
+            "not-found",
+            20,
+        ),
+        (
+            "The process has two outcomes: the target is found, or the "
+            "remaining candidates become empty.",
+            "found",
+            25,
+        ),
+    ]
+
+    for narration, expected_phase, expected_target in cases:
+        visual = _deterministic_library_visual(
+            "How binary search works",
+            narration,
+        )
+
+        assert visual is not None, narration
+        assert visual["type"] == "array", narration
+        assert visual["algorithm"] == "binary-search", narration
+        assert visual["phase"] == expected_phase, narration
+        assert visual["target"] == expected_target, narration
+
+
+def test_generic_array_mention_does_not_trigger_bubble_sort():
+    from app.graph.scene_planner import _deterministic_library_visual
+
+    visual = _deterministic_library_visual(
+        "Arrays",
+        "An array stores elements at an index.",
+    )
+
+    assert visual is not None
+    assert visual["type"] == "array"
+    assert visual["algorithm"] == "none"

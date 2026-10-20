@@ -2063,3 +2063,81 @@ def test_gemini_critic_failure_uses_deterministic_critic():
     fallback_critic.assert_called_once()
     assert result["approved"] is True
     assert "Deterministic review approved." in result["critique"]
+
+def test_binary_search_fallback_is_topic_specific_and_evidence_grounded():
+    from app.graph.nodes import scriptwriter_node
+
+    state = initial_state(topic="How binary search works")
+    state["category"] = "cs"
+    state["research_sources"] = [
+        {
+            "title": "Binary search",
+            "url": "https://example.com/binary-search",
+            "summary": (
+                "Binary search is a search algorithm that finds the "
+                "position of a target value within a sorted array. "
+                "Binary search compares the target value to the middle "
+                "element of the array. If they are not equal, the half "
+                "in which the target cannot lie is eliminated and the "
+                "search continues on the remaining half. If the search "
+                "ends with the remaining half being empty, the target is "
+                "not in the array."
+            ),
+        },
+        {
+            "title": "Optimal binary search tree",
+            "url": "https://example.com/optimal-bst",
+            "summary": (
+                "Optimal BSTs are generally divided into two types: "
+                "static and dynamic."
+            ),
+        },
+    ]
+
+    script = scriptwriter_node(state)["script"]
+    lower = script.casefold()
+
+    assert 80 <= len(script.split()) <= 180
+    assert "sorted array" in lower
+    assert "middle element" in lower
+    assert "remaining half" in lower
+    assert "empty" in lower
+    assert "optimal bst" not in lower
+    assert "static and dynamic" not in lower
+    assert "the key is to understand the evidence behind" not in lower
+    assert "following each step carefully" not in lower
+
+
+def test_cs_binary_search_does_not_call_physics_builder(monkeypatch):
+    import app.graph.nodes as nodes
+
+    def unexpected_physics_builder(*args, **kwargs):
+        raise AssertionError("CS topics must not invoke the Physics builder.")
+
+    monkeypatch.setattr(
+        nodes,
+        "_multi_concept_physics_script",
+        unexpected_physics_builder,
+    )
+
+    state = initial_state(topic="How binary search works")
+    state["category"] = "cs"
+    state["research_sources"] = [
+        {
+            "title": "Binary search",
+            "url": "https://example.com/binary-search",
+            "summary": (
+                "Binary search is a search algorithm that finds the "
+                "position of a target value within a sorted array. "
+                "Binary search compares the target value to the middle "
+                "element of the array. If they are not equal, the half "
+                "in which the target cannot lie is eliminated and the "
+                "search continues on the remaining half. If the search "
+                "ends with the remaining half being empty, the target is "
+                "not in the array."
+            ),
+        },
+    ]
+
+    result = nodes.scriptwriter_node(state)
+    assert "middle element" in result["script"].casefold()

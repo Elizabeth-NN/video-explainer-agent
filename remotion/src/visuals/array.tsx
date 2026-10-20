@@ -15,11 +15,49 @@ export const arraySchema = z.object({
     .enum(["none", "bubble-sort", "selection-sort", "insertion-sort", "binary-search", "linear-search"])
     .catch("none"),
   target: z.number().optional(),
+  phase: z.enum([
+    "overview",
+    "midpoint",
+    "elimination",
+    "found",
+    "not-found",
+  ]).optional(),
 });
 export type ArraySpec = z.infer<typeof arraySchema>;
 
 const arrayTrace = (spec: ArraySpec): ArrayFrame[] => {
   const target = spec.target ?? spec.values[Math.floor(spec.values.length / 2)];
+
+  if (spec.algorithm === "binary-search" && spec.phase) {
+    const frames = binarySearch(spec.values, target);
+
+    switch (spec.phase) {
+      case "overview": {
+        const values = [...spec.values].sort((a, b) => a - b);
+        return [{
+          values,
+          range: [0, values.length - 1],
+          note: `Sorted array; looking for ${target}`,
+        }];
+      }
+      case "midpoint":
+        return frames[1] ? [frames[1]] : frames;
+
+      case "elimination":
+        return frames.length > 3 ? frames.slice(1, -1) : frames;
+
+      case "found": {
+        const foundFrames = frames.filter(
+          (frame) => frame.found !== undefined
+        );
+        return foundFrames.length ? foundFrames.slice(-1) : frames.slice(-1);
+      }
+
+      case "not-found":
+        return frames;
+    }
+  }
+
   switch (spec.algorithm) {
     case "bubble-sort": return bubbleSort(spec.values);
     case "selection-sort": return selectionSort(spec.values);
