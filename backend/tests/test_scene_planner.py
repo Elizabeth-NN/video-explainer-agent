@@ -1076,55 +1076,20 @@ def test_generic_array_mention_does_not_trigger_bubble_sort():
     assert visual["algorithm"] == "none"
 
 
-def test_gemini_cannot_replace_binary_search_with_bubble_sort(monkeypatch):
+def test_planner_binary_search_visual_wins_over_deterministic(monkeypatch):
     from app.graph import scene_planner
 
     def fake_gemini_planner(scenes, topic):
         return [{
-            "concept": "Binary search",
-            "processKind": "algorithm",
-            "visual": {
-                "type": "array",
-                "title": "Bubble sort",
-                "values": [5, 2, 9, 1, 7, 3],
-                "algorithm": "bubble-sort",
-            },
-        }]
-
-    monkeypatch.setattr(
-        scene_planner,
-        "_call_gemini_planner",
-        fake_gemini_planner,
-    )
-
-    result = scene_planner.scene_planner_node({
-        "topic": "How binary search works",
-        "category": "cs",
-        "script": (
-            "Binary search compares the target value to the middle "
-            "element of a sorted array."
-        ),
-        "approved": True,
-    }, use_gemini_planner=True)
-
-    visual = result["scenes"][0]["visual"]
-    assert visual["type"] == "array"
-    assert visual["algorithm"] == "binary-search"
-    assert visual["phase"] == "midpoint"
-
-def test_gemini_cannot_change_binary_search_array_or_phase(monkeypatch):
-    from app.graph import scene_planner
-
-    def fake_gemini_planner(scenes, topic):
-        return [{
-            "concept": "Binary search",
+            "concept": "Binary search compares the middle element",
             "processKind": "algorithm",
             "visual": {
                 "type": "array",
                 "title": "Alternative binary search",
-                "values": [1, 3, 5, 7, 9],
+                "values": [2, 4, 6, 8, 10],
                 "algorithm": "binary-search",
-                "target": 7,
+                "target": 6,
+                "phase": "elimination",
             },
         }]
 
@@ -1148,9 +1113,79 @@ def test_gemini_cannot_change_binary_search_array_or_phase(monkeypatch):
 
     assert visual["type"] == "array"
     assert visual["algorithm"] == "binary-search"
-    assert visual["values"] == [3, 8, 12, 19, 25, 31, 42]
-    assert visual["target"] == 25
+    assert visual["values"] == [2, 4, 6, 8, 10]
+    assert visual["target"] == 6
+    assert visual["phase"] == "elimination"
+
+
+def test_planner_failure_falls_back_to_deterministic_binary_search(monkeypatch):
+    from app.graph import scene_planner
+
+    monkeypatch.setattr(
+        scene_planner,
+        "_call_gemini_planner",
+        lambda scenes, topic: [None],
+    )
+
+    result = scene_planner.scene_planner_node({
+        "topic": "How binary search works",
+        "category": "cs",
+        "script": (
+            "Binary search compares the target value to the middle "
+            "element of a sorted array."
+        ),
+        "approved": True,
+    }, use_gemini_planner=True)
+
+    scene = result["scenes"][0]
+    visual = scene["visual"]
+
+    assert visual["type"] == "array"
+    assert visual["algorithm"] == "binary-search"
     assert visual["phase"] == "midpoint"
+    assert visual["target"] == 25
+    assert "concept" not in scene
+
+
+def test_planner_rejects_unknown_algorithm_visual(monkeypatch):
+    import json
+    from unittest.mock import patch
+
+    from app.graph import scene_planner
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    response_data = [{
+        "concept": "Sorting the array",
+        "processKind": "algorithm",
+        "visual": {
+            "type": "array",
+            "title": "SORTING",
+            "values": [5, 2, 9],
+            "algorithm": "quick-sort",
+        },
+    }]
+
+    with (
+        patch("google.genai.Client") as client_class,
+        patch("google.genai.types.GenerateContentConfig"),
+    ):
+        client = client_class.return_value
+        client.models.generate_content.return_value.text = json.dumps(
+            response_data
+        )
+
+        result = scene_planner.scene_planner_node({
+            "topic": "Sorting algorithms",
+            "category": "cs",
+            "script": (
+                "A sorting algorithm puts the elements of an array "
+                "into order."
+            ),
+            "approved": True,
+        }, use_gemini_planner=True)
+
+    assert result["scenes"][0].get("visual") is None
 
 
 def test_narration_only_binary_search_visual_includes_phase():
@@ -1165,3 +1200,104 @@ def test_narration_only_binary_search_visual_includes_phase():
     assert visual["algorithm"] == "binary-search"
     assert visual["phase"] == "midpoint"
     assert visual["target"] == 25
+
+
+def test_align_visual_data_reuses_first_merge_sort_values():
+    from app.graph.scene_planner import _align_visual_data
+
+    scenes = [
+        {"scene_number": 1, "visual": {
+            "type": "array", "algorithm": "merge-sort", "values": [5, 2, 9],
+        }},
+        {"scene_number": 2, "visual": {
+            "type": "array", "algorithm": "merge-sort", "values": [1, 3, 7],
+        }},
+        {"scene_number": 3, "visual": {
+            "type": "array", "algorithm": "merge-sort", "values": [4, 4, 4],
+        }},
+    ]
+
+    changed = _align_visual_data(scenes)
+
+    assert [scene["visual"]["values"] for scene in scenes] == [
+        [5, 2, 9], [5, 2, 9], [5, 2, 9],
+    ]
+    assert len(changed) == 2
+
+
+def test_align_visual_data_keeps_not_found_target_outside_values():
+    from app.graph.scene_planner import _align_visual_data
+
+    scenes = [
+        {"scene_number": 1, "visual": {
+            "type": "array", "algorithm": "binary-search",
+            "values": [3, 8, 12], "target": 8, "phase": "found",
+        }},
+        {"scene_number": 2, "visual": {
+            "type": "array", "algorithm": "binary-search",
+            "values": [5, 6, 7], "target": 99, "phase": "not-found",
+        }},
+    ]
+
+    _align_visual_data(scenes)
+
+    visual = scenes[1]["visual"]
+    assert visual["values"] == [3, 8, 12]
+    assert visual["target"] == 99
+    assert visual["phase"] == "not-found"
+
+
+def test_align_visual_data_repairs_graph_start():
+    from app.graph.scene_planner import _align_visual_data
+
+    scenes = [
+        {"scene_number": 1, "visual": {
+            "type": "graph", "algorithm": "bfs", "start": "A",
+            "nodes": ["A", "B", "C"], "edges": [{"from": "A", "to": "B"}],
+        }},
+        {"scene_number": 2, "visual": {
+            "type": "graph", "algorithm": "dfs", "start": "Y",
+            "nodes": ["X", "Y"], "edges": [{"from": "X", "to": "Y"}],
+        }},
+    ]
+
+    _align_visual_data(scenes)
+
+    visual = scenes[1]["visual"]
+    assert visual["nodes"] == ["A", "B", "C"]
+    assert visual["edges"] == [{"from": "A", "to": "B"}]
+    assert visual["start"] == "A"
+    assert visual["algorithm"] == "dfs"
+
+
+def test_planner_drops_point_with_unsupported_source():
+    from app.graph.scene_planner import _validate_planner_scene
+
+    result = _validate_planner_scene(
+        {
+            "concept": "Splitting and merging",
+            "processKind": "algorithm",
+            "visual": {
+                "type": "sequence",
+                "title": "SPLIT AND MERGE",
+                "steps": [
+                    {"label": "SPLIT THE LIST"},
+                    {"label": "DIVIDE-AND-CONQUER"},
+                    {"label": "MERGE THE PARTS"},
+                ],
+                "sources": [
+                    "splits the list",
+                    "Divide-and-conquer",
+                    "merges them back",
+                ],
+            },
+        },
+        "Merge sort splits the list and merges them back together.",
+        3,
+    )
+
+    visual = result["visual"]
+    assert [step["label"] for step in visual["steps"]] == [
+        "SPLIT THE LIST", "MERGE THE PARTS",
+    ]
+    assert "sources" not in visual

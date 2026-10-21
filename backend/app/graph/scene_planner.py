@@ -1,7 +1,10 @@
+import copy
+import hashlib
 import json
 import os
 import re
 import subprocess
+import time
 from pathlib import Path
 from typing import Any, Literal
 
@@ -285,6 +288,7 @@ Rules:
 - If the topic is a named algorithm or data structure that has a matching library visual, use that visual for every scene that describes how it works, including scenes that don't repeat the algorithm's name (for example scenes about splitting, merging, comparing, ordering or stability). Use the same input values in each of those scenes.
 - If a scene only states history, trivia, a definition, or a general claim with nothing to show (for example who invented something or where it is used), return visual as null instead of a decorative diagram.
 - Labels: max 3 words, UPPERCASE for node labels. Footnote: one factual sentence.
+- Always include a footnote of 'Illustrative values' on array, tree, chain and graph visuals.
 - Only use facts from the narration. Never invent numbers.
 - Use a library visual when the scene's concept matches it. Use flow, hub, bars or scene-graph only when no library visual matches.
 - For narration explaining how a database index finds a target row without scanning every row, prefer the "indexscan" library visual. Use it only when that lookup-versus-scan concept is actually explained in the narration. Its values are illustrative row IDs, not factual measurements; choose 6-12 distinct integer IDs and make target one of those IDs.
@@ -292,26 +296,28 @@ Rules:
   movement or changing positions alone does not establish a cycle.
 - Use comparison only when the narration explicitly contrasts two things.
 - Do not use comparison unless the narration names two things and says how they differ.
+- For comparison, sequence, flow and hub visuals, every label and point must restate something this scene's narration says. Don't add facts, benefits or explanations that appear only in other scenes or in your own knowledge. If you can't fill a point from this scene's narration, use fewer points.
+- For comparison, sequence, flow and hub visuals, a "sources" list is required: one string per label or point, in the same order as the spec (flow: node labels; sequence: step labels; hub: satellite labels; comparison: left points then right points). Each string must copy the exact words from this scene's narration that the label or point restates, verbatim, max 8 words.
 - Every scene needs a title (max 6 words).
 - Icons must come from: sun, panel, cell, bolt, inverter, house, syringe, virus, immune, shield, antibody, rna, protein, gear, link, check, dot, heart, or be omitted.
 - Colors must be one of: teal, gold, red, purple, white.
 - code: put in `output` ONLY text the narration states. Never invent program output.
 
 Type constraints — follow these exact JSON shapes:
-- flow: {{"type":"flow","title":"...","nodes":[{{"label":"...","icon":"sun"}},{{"label":"...","icon":"panel"}}]}}
-  Use 2-4 node objects, not strings.
-- hub: {{"type":"hub","center":{{"label":"...","icon":"dot"}},"satellites":[{{"label":"..."}},{{"label":"..."}}]}}
-  Use one center object and 2-6 satellite objects.
+- flow: {{"type":"flow","title":"...","nodes":[{{"label":"...","icon":"sun"}},{{"label":"...","icon":"panel"}}],"sources":["...","..."]}}
+  Use 2-4 node objects, not strings. sources: one string per node label, in node order.
+- hub: {{"type":"hub","center":{{"label":"...","icon":"dot"}},"satellites":[{{"label":"..."}},{{"label":"..."}}],"sources":["...","..."]}}
+  Use one center object and 2-6 satellite objects. sources: one string per satellite label, in satellite order.
 - cycle: {{"type":"cycle","title":"...","stages":[{{"label":"MORNING POSITION"}},{{"label":"MIDDAY POSITION"}},{{"label":"EVENING POSITION"}}]}}
   Every stage MUST be an object containing a label. Never return stages as strings.
-- sequence: {{"type":"sequence","title":"...","steps":[{{"label":"STEP ONE","detail":"..."}},{{"label":"STEP TWO","detail":"..."}}]}}
-  Every step MUST be an object. Use 2-5 steps.
+- sequence: {{"type":"sequence","title":"...","steps":[{{"label":"STEP ONE","detail":"..."}},{{"label":"STEP TWO","detail":"..."}}],"sources":["...","..."]}}
+  Every step MUST be an object. Use 2-5 steps. sources: one string per step label, in step order.
 - layers: {{"type":"layers","title":"...","layers":[{{"label":"TOP LAYER"}},{{"label":"BOTTOM LAYER"}}]}}
   Use 2-6 layer objects listed TOP TO BOTTOM. If carriers are used, fromLayer and toLayer are zero-based indexes.
 - anatomy: {{"type":"anatomy","title":"...","subject":"block","parts":[{{"label":"PART ONE","note":"..."}},{{"label":"PART TWO","note":"..."}}]}}
   subject must be circle, capsule, block, or blob. Use 2-6 part objects.
-- comparison: {{"type":"comparison","title":"...","left":{{"heading":"...","points":["..."]}},"right":{{"heading":"...","points":["..."]}}}}
-  Each side needs a heading and 1-4 point strings.
+- comparison: {{"type":"comparison","title":"...","left":{{"heading":"...","points":["..."]}},"right":{{"heading":"...","points":["..."]}},"sources":["...","..."]}}
+  Each side needs a heading and 1-4 point strings. sources: one string per point, left points first, then right points.
 - bars: {{"type":"bars","title":"...","bars":[{{"label":"...","value":10}},{{"label":"...","value":20}}]}}
   Use 2-6 bars. Each numeric value MUST exactly match a number explicitly stated in that scene's narration. Do not estimate, infer, invent, or use illustrative values. If the narration has no suitable explicit numbers, choose another visual type.
 - scene-graph: LAST RESORT only. Shape:
@@ -340,7 +346,9 @@ def _planner_prompt(scenes: list[dict], topic: str) -> str:
         f"Scenes:\n{_scenes_block(scenes)}\n\n"
         "Return a JSON array, one object per scene in order, each with fields: "
         "concept, processKind, visual. "
-        "If you cannot design a valid visual for a scene, set visual to null."
+        "If you cannot design a valid visual for a scene, or the scene only "
+        "states history, trivia, a definition or a general claim with nothing "
+        "to show, set visual to null."
     )
 
 
@@ -358,7 +366,13 @@ def _retry_prompt(scenes: list[dict], topic: str, feedback: str) -> str:
 
 
 def _request_planner(prompt: str) -> list[Any] | None:
-    """Run one Gemini planner call. Returns the parsed JSON list, or None."""
+    """Run the Gemini planner call with retries and model fallback.
+
+    Retries JSON parse failures, MAX_TOKENS, 500/503 and short 429 rate limits
+    (honouring the server's retry delay, capped at 60s). A 429 that looks like a
+    daily quota moves to the next GEMINI_FALLBACK_MODELS entry instead of
+    retrying the same model. Returns the parsed JSON list, or None.
+    """
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key or not api_key.strip():
         return None
@@ -369,27 +383,267 @@ def _request_planner(prompt: str) -> list[Any] | None:
     except ImportError:
         return None
 
-    try:
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model=os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite"),
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=_PLANNER_SYSTEM,
-                response_mime_type="application/json",
-                temperature=0.3,
-                max_output_tokens=8192,
-            ),
-        )
-        raw = json.loads(response.text or "[]")
-    except Exception as exc:
-        print(f"[visual-planner] Gemini call failed: {exc}")
+    primary = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
+    fallbacks = [
+        name.strip()
+        for name in os.getenv("GEMINI_FALLBACK_MODELS", "").split(",")
+        if name.strip()
+    ]
+    models = [primary, *fallbacks]
+    cache_root = os.getenv("PLANNER_CACHE_DIR")
+    client = genai.Client(api_key=api_key)
+    use_thinking_config = True
+
+    def _status_code(exc: Exception) -> int | None:
+        for attribute in ("code", "status_code"):
+            value = getattr(exc, attribute, None)
+            if isinstance(value, int):
+                return value
+        message = str(exc)
+        for code in (400, 429, 500, 503):
+            if str(code) in message:
+                return code
         return None
 
-    if not isinstance(raw, list):
-        print("[visual-planner] Gemini returned non-list; discarding all visuals")
-        return None
-    return raw
+    def _quota_id(exc: Exception) -> str | None:
+        match = re.search(
+            r"(?:quotaId|quota_id)['\"]?\s*:\s*['\"]([^'\"]+)", str(exc)
+        )
+        return match.group(1) if match else None
+
+    def _retry_delay(exc: Exception) -> float | None:
+        match = re.search(
+            r"(?:retryDelay|retry_delay)['\"]?\s*:\s*['\"]?(\d+(?:\.\d+)?)s",
+            str(exc),
+        )
+        return float(match.group(1)) if match else None
+
+    def _cache_path(model: str) -> Path | None:
+        if not cache_root:
+            return None
+        digest = hashlib.sha256(
+            f"{model}\n{_PLANNER_SYSTEM}\n{prompt}".encode("utf-8")
+        ).hexdigest()
+        return Path(cache_root) / f"{digest}.json"
+
+    def _log_failure(model: str, exc: Exception, status: int | None) -> None:
+        line = (
+            "[visual-planner] Gemini call failed: "
+            f"model={model} status={status or '?'}"
+        )
+        quota = _quota_id(exc)
+        if quota:
+            line += f" quota={quota}"
+        print(line)
+
+    for model in models:
+        for attempt in range(1, 4):
+            path = _cache_path(model)
+            if path is not None and path.is_file():
+                try:
+                    cached = json.loads(path.read_text("utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    cached = None
+                if isinstance(cached, list):
+                    print("[visual-planner] cache hit")
+                    return cached
+
+            config: dict[str, Any] = {
+                "system_instruction": _PLANNER_SYSTEM,
+                "response_mime_type": "application/json",
+                "temperature": 0.1,
+                "max_output_tokens": 8192,
+            }
+            if use_thinking_config:
+                # Structured JSON needs no reasoning tokens, and thinking was
+                # consuming the output budget enough to end responses early.
+                config["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(**config),
+                )
+            except Exception as exc:
+                status = _status_code(exc)
+                _log_failure(model, exc, status)
+
+                if status == 400 and use_thinking_config:
+                    print(
+                        "[visual-planner] thinking config rejected by the model; "
+                        "retrying without it"
+                    )
+                    use_thinking_config = False
+                    continue
+
+                if status == 429:
+                    delay = _retry_delay(exc)
+                    if "PerDay" in str(exc) or (delay is not None and delay > 60):
+                        # Daily quota: no point retrying this model.
+                        break
+                    if attempt >= 3:
+                        return None
+                    wait = min(delay or 0.0, 60.0)
+                    if wait > 0:
+                        time.sleep(wait)
+                    continue
+
+                if status in (500, 503) and attempt < 3:
+                    continue
+
+                return None
+
+            text = response.text or ""
+            candidates = getattr(response, "candidates", None) or []
+            finish_reason = candidates[0].finish_reason if candidates else None
+            finish_name = getattr(finish_reason, "name", None) or str(
+                finish_reason or "unknown"
+            )
+
+            usage = getattr(response, "usage_metadata", None)
+            usage_parts = []
+            if usage is not None:
+                for label, attribute in (
+                    ("prompt_tokens", "prompt_token_count"),
+                    ("output_tokens", "candidates_token_count"),
+                    ("thinking_tokens", "thoughts_token_count"),
+                ):
+                    value = getattr(usage, attribute, None)
+                    if value is not None:
+                        usage_parts.append(f"{label}={value}")
+
+            diagnostics = (
+                f"[visual-planner] call {attempt}/3 model={model} "
+                f"finish={finish_name} text_len={len(text)}"
+            )
+            if usage_parts:
+                diagnostics += " " + " ".join(usage_parts)
+            print(diagnostics)
+
+            if "MAX_TOKENS" in str(finish_name):
+                print("[visual-planner] response hit MAX_TOKENS")
+                if attempt < 3:
+                    continue
+                print("[visual-planner] giving up after 3 attempts")
+                return None
+
+            try:
+                raw = json.loads(text)
+            except json.JSONDecodeError as exc:
+                print(f"[visual-planner] JSON parse failed: {exc}")
+                print(f"[visual-planner] raw text head: {text[:200]!r}")
+                print(f"[visual-planner] raw text tail: {text[-200:]!r}")
+                if attempt < 3:
+                    continue
+                print("[visual-planner] giving up after 3 attempts")
+                return None
+
+            if not isinstance(raw, list):
+                print("[visual-planner] Gemini returned non-list; discarding all visuals")
+                return None
+
+            if path is not None:
+                try:
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text(text, "utf-8")
+                except OSError as exc:
+                    print(f"[visual-planner] cache write failed: {exc}")
+            return raw
+    return None
+
+
+_SOURCE_VISUAL_TYPES = frozenset({"flow", "hub", "comparison", "sequence"})
+
+
+def _match_narration_text(text: str) -> str:
+    """Lowercase and strip punctuation for narration/source comparison."""
+    text = text.lower()
+    text = re.sub(r"[^\w\s]", "", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _drop_unsupported_sources(
+    visual: dict[str, Any],
+    narration: str,
+    scene_num: int,
+) -> dict[str, Any] | None:
+    """Drop points whose `sources` entry is not in the scene's narration.
+
+    `sources` is positional: flow node labels, sequence step labels, hub
+    satellite labels, or comparison points (left side first, then right).
+    Returns None when too few items remain for a valid visual.
+    """
+    sources = visual.pop("sources", None)
+    if not isinstance(sources, list) or not sources:
+        return visual
+
+    narration_text = _match_narration_text(narration)
+
+    def supported(index: int) -> bool:
+        if index >= len(sources):
+            return True
+        source = sources[index]
+        if not isinstance(source, str) or not source.strip():
+            return True
+        return _match_narration_text(source) in narration_text
+
+    def label_of(item: Any) -> str:
+        if isinstance(item, dict):
+            return str(item.get("label", ""))
+        return str(item)
+
+    def drop(item: Any) -> None:
+        print(
+            f"[visual-planner] scene {scene_num}: "
+            f"dropped unsupported point: {label_of(item)}"
+        )
+
+    vtype = visual.get("type")
+    if vtype in ("flow", "sequence"):
+        key = "nodes" if vtype == "flow" else "steps"
+        items = visual.get(key)
+        if isinstance(items, list):
+            kept = []
+            for index, item in enumerate(items):
+                if supported(index):
+                    kept.append(item)
+                else:
+                    drop(item)
+            visual[key] = kept
+            if len(kept) < 2:
+                return None
+    elif vtype == "hub":
+        satellites = visual.get("satellites")
+        if isinstance(satellites, list):
+            kept = []
+            for index, item in enumerate(satellites):
+                if supported(index):
+                    kept.append(item)
+                else:
+                    drop(item)
+            visual["satellites"] = kept
+    elif vtype == "comparison":
+        cursor = 0
+        for side_name in ("left", "right"):
+            side = visual.get(side_name)
+            if not isinstance(side, dict):
+                continue
+            points = side.get("points")
+            if not isinstance(points, list):
+                continue
+            kept = []
+            for point in points:
+                if supported(cursor):
+                    kept.append(point)
+                else:
+                    drop(point)
+                cursor += 1
+            side["points"] = kept
+            if not kept:
+                return None
+
+    return visual
 
 
 def _validate_planner_scene(
@@ -415,6 +669,19 @@ def _validate_planner_scene(
     visual_dict = parsed.visual
     validated_visual: dict[str, Any] | None = None
     if isinstance(visual_dict, dict):
+        if visual_dict.get("type") in _SOURCE_VISUAL_TYPES:
+            visual_dict = _drop_unsupported_sources(
+                visual_dict, narration, scene_num
+            )
+            if visual_dict is None:
+                return {
+                    "concept": parsed.concept,
+                    "processKind": parsed.processKind,
+                    "visual": None,
+                }
+        else:
+            visual_dict.pop("sources", None)
+
         try:
             vtype = visual_dict.get("type")
             _model_map: dict[str, type[BaseModel]] = {
@@ -1610,6 +1877,76 @@ def _deterministic_library_visual(
     return None
 
 
+def _align_visual_data(scenes: list[dict]) -> list[tuple[dict, dict]]:
+    """Reuse the first scene's input data for later visuals of the same kind.
+
+    Arrays are grouped by algorithm, so a merge-sort scene never inherits a
+    bubble-sort array's values. Trees and graphs share their data within the
+    type, since traversal modes run on the same structure.
+
+    Returns (scene, original visual) for every visual it changed, so the caller
+    can validate the result and roll back a scene.
+    """
+    first_array: dict[str, dict[str, Any]] = {}
+    first_tree: dict[str, Any] | None = None
+    first_graph: dict[str, Any] | None = None
+    changed: list[tuple[dict, dict]] = []
+
+    for scene in scenes:
+        visual = scene.get("visual")
+        if not isinstance(visual, dict):
+            continue
+
+        vtype = visual.get("type")
+        if vtype == "array":
+            algorithm = visual.get("algorithm")
+            if not isinstance(algorithm, str) or algorithm == "none":
+                continue
+            source = first_array.setdefault(algorithm, visual)
+            if source is not visual:
+                changed.append((scene, copy.deepcopy(visual)))
+                if "values" in source:
+                    visual["values"] = list(source["values"])
+
+                if algorithm in ("binary-search", "linear-search"):
+                    values = visual.get("values") or []
+                    if values and not (
+                        visual.get("target") in values
+                        or visual.get("phase") == "not-found"
+                    ):
+                        source_target = source.get("target")
+                        if source_target in values:
+                            visual["target"] = source_target
+                        else:
+                            visual["target"] = values[len(values) // 2]
+        elif vtype == "tree":
+            if first_tree is None:
+                first_tree = visual
+            elif "values" in first_tree:
+                changed.append((scene, copy.deepcopy(visual)))
+                visual["values"] = list(first_tree["values"])
+        elif vtype == "graph":
+            if first_graph is None:
+                first_graph = visual
+            else:
+                changed.append((scene, copy.deepcopy(visual)))
+                if "nodes" in first_graph:
+                    visual["nodes"] = list(first_graph["nodes"])
+                if "edges" in first_graph:
+                    visual["edges"] = [
+                        dict(edge) for edge in first_graph["edges"]
+                    ]
+
+                nodes = visual.get("nodes") or []
+                if nodes and visual.get("start") not in nodes:
+                    source_start = first_graph.get("start")
+                    visual["start"] = (
+                        source_start if source_start in nodes else nodes[0]
+                    )
+
+    return changed
+
+
 def scene_planner_node(
     state: VideoState,
     *,
@@ -1714,5 +2051,19 @@ def scene_planner_node(
                 print(
                     f"[visual-planner] scene {sn}: planner returned no visual"
                 )
+
+        # Keep one algorithm video's input data identical across its scenes.
+        aligned = _align_visual_data(scenes)
+        if aligned:
+            checks = _validate_with_remotion(
+                [scene["visual"] for scene, _ in aligned]
+            )
+            if checks is None:
+                for scene, original in aligned:
+                    scene["visual"] = original
+            else:
+                for (scene, original), check in zip(aligned, checks):
+                    if not check.get("ok"):
+                        scene["visual"] = original
 
     return {"scenes": scenes}
