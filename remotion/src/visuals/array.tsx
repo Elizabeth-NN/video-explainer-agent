@@ -2,7 +2,8 @@ import React, { useMemo } from "react";
 import { z } from "zod";
 import { C, Footnote, Note, stage, useT, useTrace } from "./kit";
 import {
-  type ArrayFrame, binarySearch, bubbleSort, insertionSort, linearSearch, selectionSort, walkArray,
+  type ArrayFrame, ARRAY_ALGORITHMS, binarySearch, bubbleSort, insertionSort,
+  linearSearch, mergeSort, selectionSort, walkArray,
 } from "./algorithms";
 import { HINTS } from "./hints";
 
@@ -11,9 +12,7 @@ export const arraySchema = z.object({
   title: z.string().optional(),
   footnote: z.string().optional(),
   values: z.array(z.number().min(0)).min(2).max(10),
-  algorithm: z
-    .enum(["none", "bubble-sort", "selection-sort", "insertion-sort", "binary-search", "linear-search"])
-    .catch("none"),
+  algorithm: z.enum(ARRAY_ALGORITHMS).default("none"),
   target: z.number().optional(),
   phase: z.enum([
     "overview",
@@ -73,13 +72,14 @@ const arrayTrace = (spec: ArraySpec): ArrayFrame[] => {
     case "bubble-sort": return bubbleSort(spec.values);
     case "selection-sort": return selectionSort(spec.values);
     case "insertion-sort": return insertionSort(spec.values);
+    case "merge-sort": return mergeSort(spec.values);
     case "binary-search": return binarySearch(spec.values, target);
     case "linear-search": return linearSearch(spec.values, target);
     default: return walkArray(spec.values);
   }
 };
 
-const SORTS = ["bubble-sort", "selection-sort", "insertion-sort"];
+const SORTS = ["bubble-sort", "selection-sort", "insertion-sort", "merge-sort"];
 
 const look = (i: number, fr: ArrayFrame) => {
   if (fr.found === i) return { col: C.teal, fill: 0.55, op: 1 };

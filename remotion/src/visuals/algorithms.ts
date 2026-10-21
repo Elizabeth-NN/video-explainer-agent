@@ -6,8 +6,11 @@
 
 /* ───────────── arrays ───────────── */
 
-export type ArrayAlgorithm =
-  | "none" | "bubble-sort" | "selection-sort" | "insertion-sort" | "binary-search" | "linear-search";
+export const ARRAY_ALGORITHMS = [
+  "none", "bubble-sort", "selection-sort", "insertion-sort",
+  "merge-sort", "binary-search", "linear-search",
+] as const;
+export type ArrayAlgorithm = (typeof ARRAY_ALGORITHMS)[number];
 
 export type ArrayFrame = {
   values: number[];
@@ -75,6 +78,53 @@ export const insertionSort = (input: number[]): ArrayFrame[] => {
       j--;
     }
   }
+  frames.push({ values: [...a], done: a.map((_, i) => i), note: "Sorted" });
+  return frames;
+};
+
+/** Merge sort. Frames show each split, then each merged range marked done. */
+export const mergeSort = (input: number[]): ArrayFrame[] => {
+  const a = [...input];
+  const frames: ArrayFrame[] = [{ values: [...a], note: "Unsorted" }];
+
+  const indexes = (lo: number, hi: number) =>
+    Array.from({ length: hi - lo + 1 }, (_, k) => lo + k);
+
+  const sort = (lo: number, hi: number): void => {
+    if (lo >= hi) return;
+    const mid = Math.floor((lo + hi) / 2);
+
+    frames.push({
+      values: [...a],
+      range: [lo, hi],
+      note: `Split indexes ${lo} to ${hi} into two halves`,
+    });
+
+    sort(lo, mid);
+    sort(mid + 1, hi);
+
+    const left = a.slice(lo, mid + 1);
+    const right = a.slice(mid + 1, hi + 1);
+    let i = 0;
+    let j = 0;
+    let k = lo;
+    // `<=` takes the left value on a tie, which keeps the merge stable.
+    while (i < left.length && j < right.length) {
+      if (left[i] <= right[j]) a[k++] = left[i++];
+      else a[k++] = right[j++];
+    }
+    while (i < left.length) a[k++] = left[i++];
+    while (j < right.length) a[k++] = right[j++];
+
+    frames.push({
+      values: [...a],
+      range: [lo, hi],
+      done: indexes(lo, hi),
+      note: `Merge indexes ${lo} to ${hi}`,
+    });
+  };
+
+  sort(0, a.length - 1);
   frames.push({ values: [...a], done: a.map((_, i) => i), note: "Sorted" });
   return frames;
 };

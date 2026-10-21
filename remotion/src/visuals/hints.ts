@@ -3,12 +3,15 @@
  * schema Remotion validates and the instructions Gemini sees can't drift apart.
  * No React imports here: scripts/export-catalog.ts reads this file under plain Node.
  */
+import { ARRAY_ALGORITHMS } from "./algorithms";
+
 export const HINTS = {
   array:
     `array: a row of values. Use for arrays, sorting, searching, indexing.
   {"type":"array","values":[5,2,9,1,7],"algorithm":"bubble-sort","target":7}
-  values: 2-10 non-negative numbers. algorithm: none | bubble-sort | selection-sort | insertion-sort | binary-search | linear-search.
-  target: only for the two searches. NEVER write the steps; the renderer computes them.`,
+  values: 2-10 non-negative numbers. algorithm: ${ARRAY_ALGORITHMS.join(" | ")}.
+  target: only for the two searches. NEVER write the steps; the renderer computes them.
+  phase (binary-search only): overview | midpoint | elimination | found | not-found, to show one stage per scene.`,
 
   tree:
     `tree: a binary search tree built by inserting values in order. Use for BSTs, tree traversal, heaps-as-trees, hierarchy of depth.

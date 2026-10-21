@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import subprocess
 from pathlib import Path
 from typing import Any, Literal
 
@@ -25,6 +26,22 @@ try:
 except FileNotFoundError:
     _PLANNER_CATALOG = ""
     print(f"[visual-planner] WARNING: {_CATALOG_PATH} not found — library visuals disabled in prompt")
+
+# The registered library types are exported alongside the text catalog by
+# `npx tsx src/visuals/export_catalog.ts`.
+_CATALOG_TYPES_PATH = _CATALOG_PATH.with_suffix(".json")
+try:
+    _LIBRARY_TYPES: frozenset[str] = frozenset(
+        json.loads(_CATALOG_TYPES_PATH.read_text("utf-8"))["types"]
+    )
+except (OSError, KeyError, TypeError, ValueError):
+    _LIBRARY_TYPES = frozenset()
+    print(
+        f"[visual-planner] WARNING: {_CATALOG_TYPES_PATH} missing or unreadable "
+        "— library visuals cannot be validated"
+    )
+
+_REMOTION_DIR = Path(__file__).resolve().parents[3] / "remotion"
 
 # ---------------------------------------------------------------------------
 # Pydantic models – mirror the Zod VisualSpecSchema in remotion/src/visualAdapter.ts
@@ -206,14 +223,6 @@ class _SceneGraphSpec(BaseModel):
     groups: list[Any] | None = None
 
 
-_LIBRARY_TYPES = frozenset([
-    "array", "tree", "chain", "graph", "exchange", "code",
-    "architecture", "balancer", "ring", "cache",
-    "pipeline", "deploy",
-    "table", "join", "indexscan", "replication", "sharding",
-])
-
-
 class _LibrarySpec(BaseModel):
     """Permissive pass-through for library visual types. Remotion's zod validates them."""
     type: str
@@ -229,8 +238,8 @@ _VISUAL_UNION = (
 
 class _PlannerSceneOutput(BaseModel):
     concept: str
-    processKind: ProcessKind
-    visual: dict[str, Any]
+    processKind: str
+    visual: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -271,16 +280,18 @@ Available library visuals (use EXACTLY these JSON shapes; the renderer validates
 
 Rules:
 - Never write algorithm steps or query results. Supply inputs only; the renderer computes the steps.
-- Choose per scene from the concept. The video's overall topic is NOT a factor.
-- Do not use the same visual type for consecutive scenes unless the concept is genuinely the same.
-- Do NOT use the same visual type for consecutive scenes unless their processKind is genuinely the same.
+- Choose per scene from the concept. Use the topic to keep inputs consistent across scenes, but choose each visual from that scene's concept.
+- When consecutive scenes explain the same algorithm or structure, reuse the same visual type and the same input values, varying only phase or operations.
+- If the topic is a named algorithm or data structure that has a matching library visual, use that visual for every scene that describes how it works, including scenes that don't repeat the algorithm's name (for example scenes about splitting, merging, comparing, ordering or stability). Use the same input values in each of those scenes.
+- If a scene only states history, trivia, a definition, or a general claim with nothing to show (for example who invented something or where it is used), return visual as null instead of a decorative diagram.
 - Labels: max 3 words, UPPERCASE for node labels. Footnote: one factual sentence.
 - Only use facts from the narration. Never invent numbers.
-- Use a library visual only when the narration is actually about that concept. Otherwise use flow, hub, bars or scene-graph.
+- Use a library visual when the scene's concept matches it. Use flow, hub, bars or scene-graph only when no library visual matches.
 - For narration explaining how a database index finds a target row without scanning every row, prefer the "indexscan" library visual. Use it only when that lookup-versus-scan concept is actually explained in the narration. Its values are illustrative row IDs, not factual measurements; choose 6-12 distinct integer IDs and make target one of those IDs.
 - Use cycle only when the narration describes a genuinely repeating process;
   movement or changing positions alone does not establish a cycle.
 - Use comparison only when the narration explicitly contrasts two things.
+- Do not use comparison unless the narration names two things and says how they differ.
 - Every scene needs a title (max 6 words).
 - Icons must come from: sun, panel, cell, bolt, inverter, house, syringe, virus, immune, shield, antibody, rna, protein, gear, link, check, dot, heart, or be omitted.
 - Colors must be one of: teal, gold, red, purple, white.
@@ -313,40 +324,50 @@ Type constraints — follow these exact JSON shapes:
 _PLANNER_SYSTEM = _PLANNER_SYSTEM_BASE.format(catalog=_PLANNER_CATALOG if _PLANNER_CATALOG else "(catalog not available)")
 
 
-def _call_gemini_planner(
-    scenes: list[dict],
-    topic: str,
-) -> list[dict[str, Any] | None]:
-    """Call Gemini once to plan visuals for all scenes.
-
-    Returns a list parallel to `scenes` where each entry is either a dict
-    with concept/processKind/visual, or None if planning failed for that scene.
-    A failure on one scene never fails the whole call.
-    """
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key or not api_key.strip():
-        return [None] * len(scenes)
-
-    try:
-        from google import genai
-        from google.genai import types
-    except ImportError:
-        return [None] * len(scenes)
-
-    scenes_text = "\n\n".join(
+def _scenes_block(scenes: list[dict]) -> str:
+    """Render scenes for a planner prompt."""
+    return "\n\n".join(
         f"Scene {s['scene_number']}:\n"
         f"Narration: {s['narration']}\n"
         f"Visual direction: {s.get('visual_description', 'Choose a visual based on the narration.')}"
         for s in scenes
     )
 
-    prompt = (
-        f"Topic (for context only – do NOT let it bias visual-type selection):\n{topic}\n\n"
-        f"Scenes:\n{scenes_text}\n\n"
+
+def _planner_prompt(scenes: list[dict], topic: str) -> str:
+    return (
+        f"Topic (use it to keep inputs consistent across scenes, but choose each visual from that scene's concept):\n{topic}\n\n"
+        f"Scenes:\n{_scenes_block(scenes)}\n\n"
         "Return a JSON array, one object per scene in order, each with fields: "
         "concept, processKind, visual. "
         "If you cannot design a valid visual for a scene, set visual to null."
     )
+
+
+def _retry_prompt(scenes: list[dict], topic: str, feedback: str) -> str:
+    return (
+        f"Topic (use it to keep inputs consistent across scenes, but choose each visual from that scene's concept):\n{topic}\n\n"
+        f"Scenes needing a corrected visual:\n{_scenes_block(scenes)}\n\n"
+        "The renderer rejected the visual for the scenes listed below. "
+        "Fix only the visual field and keep each scene's concept and processKind. "
+        "Return a JSON array, one object per scene above, in order, each with "
+        "fields: concept, processKind, visual. If you cannot design a valid "
+        "visual for a scene, set visual to null.\n\n"
+        f"Validation errors:\n{feedback}"
+    )
+
+
+def _request_planner(prompt: str) -> list[Any] | None:
+    """Run one Gemini planner call. Returns the parsed JSON list, or None."""
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key or not api_key.strip():
+        return None
+
+    try:
+        from google import genai
+        from google.genai import types
+    except ImportError:
+        return None
 
     try:
         client = genai.Client(api_key=api_key)
@@ -357,97 +378,252 @@ def _call_gemini_planner(
                 system_instruction=_PLANNER_SYSTEM,
                 response_mime_type="application/json",
                 temperature=0.3,
-                max_output_tokens=4096,
+                max_output_tokens=8192,
             ),
         )
         raw = json.loads(response.text or "[]")
     except Exception as exc:
         print(f"[visual-planner] Gemini call failed: {exc}")
-        return [None] * len(scenes)
+        return None
 
     if not isinstance(raw, list):
         print("[visual-planner] Gemini returned non-list; discarding all visuals")
+        return None
+    return raw
+
+
+def _validate_planner_scene(
+    item: Any,
+    narration: str,
+    scene_num: int,
+) -> dict[str, Any] | None:
+    """Validate one planner item.
+
+    Returns {concept, processKind, visual} with the visual normalised, or None
+    when the item itself is unusable. A bad visual never discards the concept.
+    """
+    if not isinstance(item, dict):
+        return None
+
+    try:
+        parsed = _PlannerSceneOutput.model_validate(item)
+    except Exception as exc:
+        print(f"[visual-planner] scene {scene_num} failed validation: {exc}")
+        return None
+
+    # Now validate the visual dict against the per-type Pydantic model.
+    visual_dict = parsed.visual
+    validated_visual: dict[str, Any] | None = None
+    if isinstance(visual_dict, dict):
+        try:
+            vtype = visual_dict.get("type")
+            _model_map: dict[str, type[BaseModel]] = {
+                "flow": _FlowSpec, "hub": _HubSpec, "bars": _BarsSpec,
+                "sequence": _SequenceSpec, "cycle": _CycleSpec,
+                "layers": _LayersSpec, "anatomy": _AnatomySpec,
+                "comparison": _ComparisonSpec, "scene-graph": _SceneGraphSpec,
+            }
+
+            if vtype in _model_map:
+                validated = _model_map[vtype].model_validate(visual_dict)
+
+                # Bar values must be explicitly supported by this scene's narration.
+                if vtype == "bars":
+                    number_matches = re.findall(
+                        r"(?<![\w.])\d[\d,]*(?:\.\d+)?%?",
+                        narration,
+                    )
+                    narration_numbers = {
+                        float(number.rstrip("%").replace(",", ""))
+                        for number in number_matches
+                    }
+
+                    bar_values = [bar.value for bar in validated.bars]
+
+                    if not narration_numbers or any(
+                        not any(abs(value - spoken) < 1e-9 for spoken in narration_numbers)
+                        for value in bar_values
+                    ):
+                        raise ValueError(
+                            "Bar values must match numbers explicitly stated "
+                            "in the scene narration."
+                        )
+
+                validated_visual = validated.model_dump(
+                    exclude_none=True,
+                    by_alias=True,
+                )
+
+            elif vtype in _LIBRARY_TYPES:
+                # Library visuals have their own schemas in Remotion.
+                # Preserve their complete specs for the Remotion adapter.
+                validated = _LibrarySpec.model_validate(visual_dict)
+                validated_visual = validated.model_dump(
+                    exclude_none=True,
+                    by_alias=True,
+                )
+        except Exception as exc:
+            print(f"[visual-planner] scene {scene_num} visual invalid: {exc}")
+
+    return {
+        "concept": parsed.concept,
+        "processKind": parsed.processKind,
+        "visual": validated_visual,  # may be None → Remotion fallback
+    }
+
+
+def _validate_with_remotion(specs: list[Any]) -> list[dict[str, Any]] | None:
+    """Validate visual specs with the renderer's own Zod schemas.
+
+    Returns one {"ok": bool, ...} result per spec, or None when the validator
+    could not run. None means "unchecked", never "failed".
+    """
+    if not specs:
+        return []
+
+    try:
+        completed = subprocess.run(
+            ["npx", "tsx", "src/visuals/validate.ts"],
+            cwd=_REMOTION_DIR,
+            input=json.dumps(specs),
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        print(f"[visual-planner] Remotion validation unavailable: {exc}")
+        return None
+
+    if completed.returncode != 0:
+        details = (completed.stderr or completed.stdout).strip()[:500]
+        print(f"[visual-planner] Remotion validation failed: {details}")
+        return None
+
+    try:
+        results = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        print(f"[visual-planner] Remotion validation output unreadable: {exc}")
+        return None
+
+    if not isinstance(results, list) or len(results) != len(specs):
+        print("[visual-planner] Remotion validation output does not match its input")
+        return None
+
+    if not all(isinstance(item, dict) and "ok" in item for item in results):
+        print("[visual-planner] Remotion validation output malformed")
+        return None
+
+    return results
+
+
+def _remotion_failures(results: list[dict[str, Any] | None]) -> dict[int, str]:
+    """Indexes of results whose library visual the renderer rejects, with errors."""
+    indexes = [
+        index
+        for index, result in enumerate(results)
+        if result
+        and isinstance(result.get("visual"), dict)
+        and result["visual"].get("type") in _LIBRARY_TYPES
+    ]
+    if not indexes:
+        return {}
+
+    checks = _validate_with_remotion(
+        [results[index]["visual"] for index in indexes]
+    )
+    if checks is None:
+        return {}
+
+    failures: dict[int, str] = {}
+    for index, check in zip(indexes, checks):
+        if not check.get("ok"):
+            failures[index] = str(check.get("error") or "invalid visual")
+    return failures
+
+
+def _retry_rejected_visuals(
+    scenes: list[dict],
+    results: list[dict[str, Any] | None],
+    failures: dict[int, str],
+    topic: str,
+) -> list[dict[str, Any] | None]:
+    """Ask Gemini once to fix rejected visuals and merge the corrections in."""
+    indexes = sorted(failures)
+    feedback = "\n".join(
+        f"Scene {scenes[index]['scene_number']}: {failures[index]}"
+        for index in indexes
+    )
+
+    raw = _request_planner(
+        _retry_prompt([scenes[index] for index in indexes], topic, feedback)
+    )
+    if raw is None:
+        print("[visual-planner] retry call failed; keeping the rejected visuals")
+        return results
+
+    updated = list(results)
+    for position, index in enumerate(indexes):
+        if position >= len(raw):
+            break
+        corrected = _validate_planner_scene(
+            raw[position],
+            scenes[index].get("narration", ""),
+            scenes[index]["scene_number"],
+        )
+        if corrected is not None:
+            updated[index] = corrected
+    return updated
+
+
+def _call_gemini_planner(
+    scenes: list[dict],
+    topic: str,
+) -> list[dict[str, Any] | None]:
+    """Call Gemini once to plan visuals for all scenes.
+
+    Returns a list parallel to `scenes` where each entry is either a dict
+    with concept/processKind/visual, or None if planning failed for that scene.
+    A failure on one scene never fails the whole call.
+
+    Library visuals are also checked against the renderer's schemas. Rejected
+    ones get one corrective Gemini call; anything still invalid afterwards
+    keeps its concept but loses the visual.
+    """
+    raw = _request_planner(_planner_prompt(scenes, topic))
+    if raw is None:
         return [None] * len(scenes)
 
     results: list[dict[str, Any] | None] = []
     for i, item in enumerate(raw[:len(scenes)]):
-        scene_num = scenes[i]["scene_number"] if i < len(scenes) else i + 1
-        if not isinstance(item, dict):
-            results.append(None)
-            continue
-        # Validate + normalise per scene – a bad spec for one scene must never
-        # raise; we just drop it and let Remotion fall back to legacy routing.
-        try:
-            parsed = _PlannerSceneOutput.model_validate(item)
-        except Exception as exc:
-            print(f"[visual-planner] scene {scene_num} failed validation: {exc}")
-            results.append(None)
-            continue
-
-        # Now validate the visual dict against the per-type Pydantic model.
-        visual_dict = parsed.visual
-        validated_visual: dict[str, Any] | None = None
-        if isinstance(visual_dict, dict):
-            try:
-                vtype = visual_dict.get("type")
-                _model_map: dict[str, type[BaseModel]] = {
-                    "flow": _FlowSpec, "hub": _HubSpec, "bars": _BarsSpec,
-                    "sequence": _SequenceSpec, "cycle": _CycleSpec,
-                    "layers": _LayersSpec, "anatomy": _AnatomySpec,
-                    "comparison": _ComparisonSpec, "scene-graph": _SceneGraphSpec,
-                }
-
-                if vtype in _model_map:
-                    validated = _model_map[vtype].model_validate(visual_dict)
-
-                    # Bar values must be explicitly supported by this scene's narration.
-                    if vtype == "bars":
-                        narration = scenes[i].get("narration", "")
-                        number_matches = re.findall(
-                            r"(?<![\w.])\d[\d,]*(?:\.\d+)?%?",
-                            narration,
-                        )
-                        narration_numbers = {
-                            float(number.rstrip("%").replace(",", ""))
-                            for number in number_matches
-                        }
-
-                        bar_values = [bar.value for bar in validated.bars]
-
-                        if not narration_numbers or any(
-                            not any(abs(value - spoken) < 1e-9 for spoken in narration_numbers)
-                            for value in bar_values
-                        ):
-                            raise ValueError(
-                                "Bar values must match numbers explicitly stated "
-                                "in the scene narration."
-                            )
-
-                    validated_visual = validated.model_dump(
-                        exclude_none=True,
-                        by_alias=True,
-                    )
-
-                elif vtype in _LIBRARY_TYPES:
-                    # Library visuals have their own schemas in Remotion.
-                    # Preserve their complete specs for the Remotion adapter.
-                    validated = _LibrarySpec.model_validate(visual_dict)
-                    validated_visual = validated.model_dump(
-                        exclude_none=True,
-                        by_alias=True,
-                    )
-            except Exception as exc:
-                print(f"[visual-planner] scene {scene_num} visual invalid: {exc}")
-
-        results.append({
-            "concept": parsed.concept,
-            "processKind": parsed.processKind,
-            "visual": validated_visual,  # may be None → Remotion fallback
-        })
+        results.append(
+            _validate_planner_scene(
+                item,
+                scenes[i].get("narration", ""),
+                scenes[i]["scene_number"],
+            )
+        )
 
     # Pad if Gemini returned fewer items than scenes
     while len(results) < len(scenes):
         results.append(None)
+
+    failures = _remotion_failures(results)
+    if failures:
+        print(
+            f"[visual-planner] {len(failures)} library visual(s) rejected by "
+            "the renderer; retrying once"
+        )
+        results = _retry_rejected_visuals(scenes, results, failures, topic)
+
+        still_invalid = _remotion_failures(results)
+        for index in sorted(still_invalid):
+            print(
+                f"[visual-planner] scene {scenes[index]['scene_number']}: "
+                "library visual still invalid, dropping it"
+            )
+            result = results[index]
+            if result is not None:
+                result["visual"] = None
 
     return results
 
@@ -1168,20 +1344,10 @@ def _deterministic_library_visual(
     """Choose a registered Remotion visual from explicit CS scene content.
 
     Example values in these specs are illustrative animation data, not facts
-    inferred from the narration. Specialised science visuals are left to the
-    existing visual resolver.
+    inferred from the narration.
     """
     topic_text = topic.lower()
     sentence = narration.lower()
-
-    # Preserve the existing specialised topic visuals.
-    specialised_topics = (
-        "solar", "photovoltaic", "vaccine", "immun",
-        "heart", "blood circulation", "water cycle",
-        "projectile", "physics",
-    )
-    if any(term in topic_text for term in specialised_topics):
-        return None
 
     # Use the overall topic to recognize binary-search scenes even
     # when individual narration sentences do not repeat the algorithm name.
@@ -1272,7 +1438,7 @@ def _deterministic_library_visual(
             "target": target,
             "phase": phase,
         }
-    if any(term in sentence for term in ("bubble sort", "sorting algorithm", "sorts an array")):
+    if any(term in sentence for term in ("bubble sort", "sorts an array")):
         return {
             "type": "array",
             "title": "Bubble sort",
@@ -1488,9 +1654,13 @@ def scene_planner_node(
         if use_semantic_graph:
             visual = _semantic_visual(narration)
 
-        # Prefer a topic-relevant Remotion library visual for CS scenes.
-        # Keep the existing specialised physics/science paths untouched.
-        if visual is None and state.get("category", "cs") == "cs":
+        # The Gemini planner picks CS library visuals; the deterministic
+        # selector only runs as a per-scene fallback when that call fails.
+        if (
+            visual is None
+            and state.get("category", "cs") == "cs"
+            and not use_gemini_planner
+        ):
             visual = _deterministic_library_visual(topic, narration)
 
         # Give physics scenes a concept-specific diagram before the
@@ -1508,44 +1678,41 @@ def scene_planner_node(
         scenes.append(scene)
 
     # ── Gemini intelligent visual planner ────────────────────────────────────
-    # Runs after the deterministic pass so any validated planner result wins.
     if use_gemini_planner:
         planner_results = _call_gemini_planner(scenes, topic)
         for scene, plan in zip(scenes, planner_results):
             sn = scene["scene_number"]
             if plan is None:
                 print(f"[visual-planner] scene {sn}: no planner output, keeping legacy")
+                # Only when the planner call itself failed: fall back to the
+                # deterministic library selector for CS scenes with no visual.
+                if (
+                    state.get("category", "cs") == "cs"
+                    and scene.get("visual") is None
+                ):
+                    fallback = _deterministic_library_visual(
+                        topic, scene["narration"]
+                    )
+                    if fallback is not None:
+                        scene["visual"] = fallback
+                        print(
+                            f"[visual-planner] scene {sn}: deterministic "
+                            f"{fallback.get('type', '?')} fallback"
+                        )
                 continue
             # Write concept + processKind into the scene (Remotion ignores them)
             scene["concept"] = plan["concept"]
             scene["processKind"] = plan["processKind"]
             validated_visual = plan.get("visual")
             if validated_visual is not None:
-                existing_visual = scene.get("visual")
-
-                # Keep the deterministic binary-search visual when Gemini
-                # proposes a different algorithm or an unrelated visual.
-                # Keep deterministic binary-search visuals intact.
-                # Gemini may still describe the scene, but it must not
-                # change the array, target, algorithm, or narration phase.
-                if (
-                    isinstance(existing_visual, dict)
-                    and existing_visual.get("algorithm") == "binary-search"
-                ):
-                    print(
-                        f"[visual-planner] scene {sn}: preserving deterministic "
-                        "binary-search visual"
-                    )
-                else:
-                    scene["visual"] = validated_visual
-                    print(
-                        f"[visual-planner] scene {sn}: {plan['processKind']} "
-                        f"→ {validated_visual.get('type', '?')}"
-                    )
+                scene["visual"] = validated_visual
+                print(
+                    f"[visual-planner] scene {sn}: {plan['processKind']} "
+                    f"→ {validated_visual.get('type', '?')}"
+                )
             else:
                 print(
-                    f"[visual-planner] scene {sn}: planner visual invalid, "
-                    "keeping legacy"
+                    f"[visual-planner] scene {sn}: planner returned no visual"
                 )
 
     return {"scenes": scenes}

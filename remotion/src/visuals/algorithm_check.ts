@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import {
   binarySearch, bubbleSort, buildBst, chainTrace, graphTrace, insertionSort,
-  linearSearch, selectionSort, traversalOrder, treeTrace,
+  linearSearch, mergeSort, selectionSort, traversalOrder, treeTrace,
 } from "./algorithms";
 
 const input = [5, 2, 9, 1, 7, 3];
@@ -20,6 +20,11 @@ for (const [name, fn] of [["bubble", bubbleSort], ["selection", selectionSort], 
 assert.equal(last(binarySearch(input, 7)).found, sorted.indexOf(7), "binary search finds 7");
 assert.equal(last(binarySearch(input, 4)).found, undefined, "binary search misses 4");
 assert.equal(last(linearSearch(input, 9)).found, 2, "linear search finds 9");
+
+assert.deepEqual(last(mergeSort(input)).values, sorted, "merge sort result");
+// -0 and 0 are equal under <= but distinct under Object.is, so a stable merge
+// keeps the original -0 first; an unstable one would emit [0, -0].
+assert.deepEqual(last(mergeSort([-0, 0])).values, [-0, 0], "merge sort is stable on equal values");
 
 const t = buildBst([8, 3, 10, 1, 6, 14, 4]);
 assert.deepEqual(traversalOrder(t, "inorder"), [1, 3, 4, 6, 8, 10, 14], "inorder is sorted");
