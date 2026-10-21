@@ -35,6 +35,7 @@ jobs_lock = threading.Lock()
 
 class CreateJobRequest(BaseModel):
     topic: str = Field(min_length=3, max_length=300)
+    category: Literal["cs", "physics"] = "cs"
     use_gemini: bool = False
     voice: str = "en-US-JennyNeural"
 
@@ -53,6 +54,8 @@ def run_generation(job_id: str, request: CreateJobRequest) -> None:
         "-u",
         "run_graph.py",
         request.topic,
+        "--category",
+        request.category,
         "--video",
         "--voice",
         request.voice,
@@ -129,6 +132,7 @@ def create_job(request: CreateJobRequest):
         jobs[job_id] = {
             "job_id": job_id,
             "topic": request.topic.strip(),
+            "category": request.category,
             "status": "queued",
             "logs": [],
             "error": None,
@@ -140,6 +144,7 @@ def create_job(request: CreateJobRequest):
     return {
         "job_id": job_id,
         "topic": request.topic.strip(),
+        "category": request.category,
         "status": "queued",
     }
 

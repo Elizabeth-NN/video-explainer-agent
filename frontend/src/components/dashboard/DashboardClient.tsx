@@ -102,6 +102,7 @@ export default function DashboardClient() {
             {
               job_id: updatedJob.job_id,
               topic: updatedJob.topic,
+              category: updatedJob.category,
               videoUrl,
             },
             ...previous.filter(
@@ -164,6 +165,7 @@ export default function DashboardClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           topic: settings.topic,
+          category: settings.category,
           use_gemini: settings.model === "gemini",
           voice: settings.voice,
         }),
@@ -176,6 +178,7 @@ export default function DashboardClient() {
       const createdJob: {
         job_id: string;
         topic: string;
+        category: "cs" | "physics";
         status: "queued";
       } = await response.json();
 

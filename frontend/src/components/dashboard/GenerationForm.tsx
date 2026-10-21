@@ -11,6 +11,7 @@ type Props = {
 
 export default function GenerationForm({ onGenerate, busy }: Props) {
   const [topic, setTopic] = useState("");
+  const [category, setCategory] = useState<"cs" | "physics">("cs");
   const [model, setModel] = useState<"standard" | "gemini">("standard");
   const [voice, setVoice] = useState("en-US-JennyNeural");
   const [format, setFormat] = useState<"landscape" | "vertical">("landscape");
@@ -21,6 +22,7 @@ export default function GenerationForm({ onGenerate, busy }: Props) {
 
     onGenerate({
       topic: topic.trim(),
+      category,
       model,
       voice,
       format,
@@ -39,6 +41,18 @@ export default function GenerationForm({ onGenerate, busy }: Props) {
       </div>
 
       <form onSubmit={handleSubmit}>
+        <div className="field-group">
+          <label className="field-label" htmlFor="video-category">Video category</label>
+          <div className="select-wrap">
+            <select id="video-category" value={category} onChange={(event) => setCategory(event.target.value as "cs" | "physics")}>
+              <option value="cs">Computer Science</option>
+              <option value="physics">Physics</option>
+            </select>
+            <CaretDown size={17} />
+          </div>
+          <span className="helper-text">Choose the subject area for your explainer.</span>
+        </div>
+
         <label className="field-label" htmlFor="video-topic">What should your video explain?</label>
         <textarea
           id="video-topic"

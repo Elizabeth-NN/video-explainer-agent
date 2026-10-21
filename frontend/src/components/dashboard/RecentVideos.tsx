@@ -40,7 +40,7 @@ export default function RecentVideos({ videos }: Props) {
               </div>
               <div className="recent-video-copy">
                 <strong>{video.topic}</strong>
-                <span>Completed · MP4 video</span>
+                <span>{video.category === "physics" ? "Physics" : "Computer Science"} · Completed · MP4 video</span>
               </div>
               <a
                 className="text-link"
