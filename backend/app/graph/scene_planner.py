@@ -1,6 +1,10 @@
+import copy
+import hashlib
 import json
 import os
 import re
+import subprocess
+import time
 from pathlib import Path
 from typing import Any, Literal
 
@@ -25,6 +29,22 @@ try:
 except FileNotFoundError:
     _PLANNER_CATALOG = ""
     print(f"[visual-planner] WARNING: {_CATALOG_PATH} not found — library visuals disabled in prompt")
+
+# The registered library types are exported alongside the text catalog by
+# `npx tsx src/visuals/export_catalog.ts`.
+_CATALOG_TYPES_PATH = _CATALOG_PATH.with_suffix(".json")
+try:
+    _LIBRARY_TYPES: frozenset[str] = frozenset(
+        json.loads(_CATALOG_TYPES_PATH.read_text("utf-8"))["types"]
+    )
+except (OSError, KeyError, TypeError, ValueError):
+    _LIBRARY_TYPES = frozenset()
+    print(
+        f"[visual-planner] WARNING: {_CATALOG_TYPES_PATH} missing or unreadable "
+        "— library visuals cannot be validated"
+    )
+
+_REMOTION_DIR = Path(__file__).resolve().parents[3] / "remotion"
 
 # ---------------------------------------------------------------------------
 # Pydantic models – mirror the Zod VisualSpecSchema in remotion/src/visualAdapter.ts
@@ -206,14 +226,6 @@ class _SceneGraphSpec(BaseModel):
     groups: list[Any] | None = None
 
 
-_LIBRARY_TYPES = frozenset([
-    "array", "tree", "chain", "graph", "exchange", "code",
-    "architecture", "balancer", "ring", "cache",
-    "pipeline", "deploy",
-    "table", "join", "indexscan", "replication", "sharding",
-])
-
-
 class _LibrarySpec(BaseModel):
     """Permissive pass-through for library visual types. Remotion's zod validates them."""
     type: str
@@ -229,8 +241,8 @@ _VISUAL_UNION = (
 
 class _PlannerSceneOutput(BaseModel):
     concept: str
-    processKind: ProcessKind
-    visual: dict[str, Any]
+    processKind: str
+    visual: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -271,36 +283,42 @@ Available library visuals (use EXACTLY these JSON shapes; the renderer validates
 
 Rules:
 - Never write algorithm steps or query results. Supply inputs only; the renderer computes the steps.
-- Choose per scene from the concept. The video's overall topic is NOT a factor.
-- Do not use the same visual type for consecutive scenes unless the concept is genuinely the same.
-- Do NOT use the same visual type for consecutive scenes unless their processKind is genuinely the same.
+- Choose per scene from the concept. Use the topic to keep inputs consistent across scenes, but choose each visual from that scene's concept.
+- When consecutive scenes explain the same algorithm or structure, reuse the same visual type and the same input values, varying only phase or operations.
+- When several scenes use the same algorithm visual, give each a different phase that matches what its narration says: overview for introductions, split for dividing the list, merge for combining sorted parts, sorted for the finished result. Don't use the same phase for more than two scenes.
+- If the topic is a named algorithm or data structure that has a matching library visual, use that visual for every scene that describes how it works, including scenes that don't repeat the algorithm's name (for example scenes about splitting, merging, comparing, ordering or stability). Use the same input values in each of those scenes.
+- Return null only if the scene has no connection to the video's topic. If the topic is a named algorithm or data structure with a matching library visual and the scene discusses that algorithm, its properties (stable, efficient, comparison-based), or its variants, use the topic's visual with the same input values. If a scene is about a different algorithm (for example merge-insertion sort or insertion sort in a merge sort video), don't use the topic's algorithm visual. Return null for it. Put facts like inventors, dates or related algorithms in the narration, not in labels.
 - Labels: max 3 words, UPPERCASE for node labels. Footnote: one factual sentence.
+- Always include a footnote of 'Illustrative values' on array, tree, chain and graph visuals.
 - Only use facts from the narration. Never invent numbers.
-- Use a library visual only when the narration is actually about that concept. Otherwise use flow, hub, bars or scene-graph.
+- Use a library visual when the scene's concept matches it. Use flow, hub, bars or scene-graph only when no library visual matches.
 - For narration explaining how a database index finds a target row without scanning every row, prefer the "indexscan" library visual. Use it only when that lookup-versus-scan concept is actually explained in the narration. Its values are illustrative row IDs, not factual measurements; choose 6-12 distinct integer IDs and make target one of those IDs.
 - Use cycle only when the narration describes a genuinely repeating process;
   movement or changing positions alone does not establish a cycle.
 - Use comparison only when the narration explicitly contrasts two things.
+- Do not use comparison unless the narration names two things and says how they differ.
+- For comparison, sequence, flow and hub visuals, every label and point must restate something this scene's narration says. Don't add facts, benefits or explanations that appear only in other scenes or in your own knowledge. If you can't fill a point from this scene's narration, use fewer points.
+- For comparison, sequence, flow and hub visuals, a "sources" list is required: one string per label or point, in the same order as the spec (flow: node labels; sequence: step labels; hub: satellite labels; comparison: left points then right points). Each string must copy the exact words from this scene's narration that the label or point restates, verbatim, max 8 words.
 - Every scene needs a title (max 6 words).
 - Icons must come from: sun, panel, cell, bolt, inverter, house, syringe, virus, immune, shield, antibody, rna, protein, gear, link, check, dot, heart, or be omitted.
 - Colors must be one of: teal, gold, red, purple, white.
 - code: put in `output` ONLY text the narration states. Never invent program output.
 
 Type constraints — follow these exact JSON shapes:
-- flow: {{"type":"flow","title":"...","nodes":[{{"label":"...","icon":"sun"}},{{"label":"...","icon":"panel"}}]}}
-  Use 2-4 node objects, not strings.
-- hub: {{"type":"hub","center":{{"label":"...","icon":"dot"}},"satellites":[{{"label":"..."}},{{"label":"..."}}]}}
-  Use one center object and 2-6 satellite objects.
+- flow: {{"type":"flow","title":"...","nodes":[{{"label":"...","icon":"sun"}},{{"label":"...","icon":"panel"}}],"sources":["...","..."]}}
+  Use 2-4 node objects, not strings. sources: one string per node label, in node order.
+- hub: {{"type":"hub","center":{{"label":"...","icon":"dot"}},"satellites":[{{"label":"..."}},{{"label":"..."}}],"sources":["...","..."]}}
+  Use one center object and 2-6 satellite objects. sources: one string per satellite label, in satellite order.
 - cycle: {{"type":"cycle","title":"...","stages":[{{"label":"MORNING POSITION"}},{{"label":"MIDDAY POSITION"}},{{"label":"EVENING POSITION"}}]}}
   Every stage MUST be an object containing a label. Never return stages as strings.
-- sequence: {{"type":"sequence","title":"...","steps":[{{"label":"STEP ONE","detail":"..."}},{{"label":"STEP TWO","detail":"..."}}]}}
-  Every step MUST be an object. Use 2-5 steps.
+- sequence: {{"type":"sequence","title":"...","steps":[{{"label":"STEP ONE","detail":"..."}},{{"label":"STEP TWO","detail":"..."}}],"sources":["...","..."]}}
+  Every step MUST be an object. Use 2-5 steps. sources: one string per step label, in step order.
 - layers: {{"type":"layers","title":"...","layers":[{{"label":"TOP LAYER"}},{{"label":"BOTTOM LAYER"}}]}}
   Use 2-6 layer objects listed TOP TO BOTTOM. If carriers are used, fromLayer and toLayer are zero-based indexes.
 - anatomy: {{"type":"anatomy","title":"...","subject":"block","parts":[{{"label":"PART ONE","note":"..."}},{{"label":"PART TWO","note":"..."}}]}}
   subject must be circle, capsule, block, or blob. Use 2-6 part objects.
-- comparison: {{"type":"comparison","title":"...","left":{{"heading":"...","points":["..."]}},"right":{{"heading":"...","points":["..."]}}}}
-  Each side needs a heading and 1-4 point strings.
+- comparison: {{"type":"comparison","title":"...","left":{{"heading":"...","points":["..."]}},"right":{{"heading":"...","points":["..."]}},"sources":["...","..."]}}
+  Each side needs a heading and 1-4 point strings. sources: one string per point, left points first, then right points.
 - bars: {{"type":"bars","title":"...","bars":[{{"label":"...","value":10}},{{"label":"...","value":20}}]}}
   Use 2-6 bars. Each numeric value MUST exactly match a number explicitly stated in that scene's narration. Do not estimate, infer, invent, or use illustrative values. If the narration has no suitable explicit numbers, choose another visual type.
 - scene-graph: LAST RESORT only. Shape:
@@ -313,6 +331,518 @@ Type constraints — follow these exact JSON shapes:
 _PLANNER_SYSTEM = _PLANNER_SYSTEM_BASE.format(catalog=_PLANNER_CATALOG if _PLANNER_CATALOG else "(catalog not available)")
 
 
+def _scenes_block(scenes: list[dict]) -> str:
+    """Render scenes for a planner prompt."""
+    return "\n\n".join(
+        f"Scene {s['scene_number']}:\n"
+        f"Narration: {s['narration']}\n"
+        f"Visual direction: {s.get('visual_description', 'Choose a visual based on the narration.')}"
+        for s in scenes
+    )
+
+
+def _planner_prompt(scenes: list[dict], topic: str) -> str:
+    return (
+        f"Topic (use it to keep inputs consistent across scenes, but choose each visual from that scene's concept):\n{topic}\n\n"
+        f"Scenes:\n{_scenes_block(scenes)}\n\n"
+        "Return a JSON array, one object per scene in order, each with fields: "
+        "concept, processKind, visual. "
+        "If you cannot design a valid visual for a scene, or the scene only "
+        "states history, trivia, a definition or a general claim with nothing "
+        "to show, set visual to null."
+    )
+
+
+def _retry_prompt(scenes: list[dict], topic: str, feedback: str) -> str:
+    return (
+        f"Topic (use it to keep inputs consistent across scenes, but choose each visual from that scene's concept):\n{topic}\n\n"
+        f"Scenes needing a corrected visual:\n{_scenes_block(scenes)}\n\n"
+        "The renderer rejected the visual for the scenes listed below. "
+        "Fix only the visual field and keep each scene's concept and processKind. "
+        "Return a JSON array, one object per scene above, in order, each with "
+        "fields: concept, processKind, visual. If you cannot design a valid "
+        "visual for a scene, set visual to null.\n\n"
+        f"Validation errors:\n{feedback}"
+    )
+
+
+def _request_planner(prompt: str) -> list[Any] | None:
+    """Run the Gemini planner call with retries and model fallback.
+
+    Retries JSON parse failures, MAX_TOKENS, 500/503 and short 429 rate limits
+    (honouring the server's retry delay, capped at 60s). A 429 that looks like a
+    daily quota moves to the next GEMINI_FALLBACK_MODELS entry instead of
+    retrying the same model. Returns the parsed JSON list, or None.
+    """
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key or not api_key.strip():
+        return None
+
+    try:
+        from google import genai
+        from google.genai import types
+    except ImportError:
+        return None
+
+    primary = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
+    fallbacks = [
+        name.strip()
+        for name in os.getenv("GEMINI_FALLBACK_MODELS", "").split(",")
+        if name.strip()
+    ]
+    models = [primary, *fallbacks]
+    cache_root = os.getenv("PLANNER_CACHE_DIR")
+    client = genai.Client(api_key=api_key)
+    use_thinking_config = True
+
+    def _status_code(exc: Exception) -> int | None:
+        for attribute in ("code", "status_code"):
+            value = getattr(exc, attribute, None)
+            if isinstance(value, int):
+                return value
+        message = str(exc)
+        for code in (400, 429, 500, 503):
+            if str(code) in message:
+                return code
+        return None
+
+    def _quota_id(exc: Exception) -> str | None:
+        match = re.search(
+            r"(?:quotaId|quota_id)['\"]?\s*:\s*['\"]([^'\"]+)", str(exc)
+        )
+        return match.group(1) if match else None
+
+    def _retry_delay(exc: Exception) -> float | None:
+        match = re.search(
+            r"(?:retryDelay|retry_delay)['\"]?\s*:\s*['\"]?(\d+(?:\.\d+)?)s",
+            str(exc),
+        )
+        return float(match.group(1)) if match else None
+
+    def _cache_path(model: str) -> Path | None:
+        if not cache_root:
+            return None
+        digest = hashlib.sha256(
+            f"{model}\n{_PLANNER_SYSTEM}\n{prompt}".encode("utf-8")
+        ).hexdigest()
+        return Path(cache_root) / f"{digest}.json"
+
+    def _log_failure(model: str, exc: Exception, status: int | None) -> None:
+        line = (
+            "[visual-planner] Gemini call failed: "
+            f"model={model} status={status or '?'}"
+        )
+        quota = _quota_id(exc)
+        if quota:
+            line += f" quota={quota}"
+        print(line)
+
+    for model in models:
+        for attempt in range(1, 4):
+            path = _cache_path(model)
+            if path is not None and path.is_file():
+                try:
+                    cached = json.loads(path.read_text("utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    cached = None
+                if isinstance(cached, list):
+                    print("[visual-planner] cache hit")
+                    return cached
+
+            config: dict[str, Any] = {
+                "system_instruction": _PLANNER_SYSTEM,
+                "response_mime_type": "application/json",
+                "temperature": 0.1,
+                "max_output_tokens": 8192,
+            }
+            if use_thinking_config:
+                # Structured JSON needs no reasoning tokens, and thinking was
+                # consuming the output budget enough to end responses early.
+                config["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(**config),
+                )
+            except Exception as exc:
+                status = _status_code(exc)
+                _log_failure(model, exc, status)
+
+                if status == 400 and use_thinking_config:
+                    print(
+                        "[visual-planner] thinking config rejected by the model; "
+                        "retrying without it"
+                    )
+                    use_thinking_config = False
+                    continue
+
+                if status == 429:
+                    delay = _retry_delay(exc)
+                    if "PerDay" in str(exc) or (delay is not None and delay > 60):
+                        # Daily quota: no point retrying this model.
+                        break
+                    if attempt >= 3:
+                        return None
+                    wait = min(delay or 0.0, 60.0)
+                    if wait > 0:
+                        time.sleep(wait)
+                    continue
+
+                if status in (500, 503) and attempt < 3:
+                    continue
+
+                return None
+
+            text = response.text or ""
+            candidates = getattr(response, "candidates", None) or []
+            finish_reason = candidates[0].finish_reason if candidates else None
+            finish_name = getattr(finish_reason, "name", None) or str(
+                finish_reason or "unknown"
+            )
+
+            usage = getattr(response, "usage_metadata", None)
+            usage_parts = []
+            if usage is not None:
+                for label, attribute in (
+                    ("prompt_tokens", "prompt_token_count"),
+                    ("output_tokens", "candidates_token_count"),
+                    ("thinking_tokens", "thoughts_token_count"),
+                ):
+                    value = getattr(usage, attribute, None)
+                    if value is not None:
+                        usage_parts.append(f"{label}={value}")
+
+            diagnostics = (
+                f"[visual-planner] call {attempt}/3 model={model} "
+                f"finish={finish_name} text_len={len(text)}"
+            )
+            if usage_parts:
+                diagnostics += " " + " ".join(usage_parts)
+            print(diagnostics)
+
+            if "MAX_TOKENS" in str(finish_name):
+                print("[visual-planner] response hit MAX_TOKENS")
+                if attempt < 3:
+                    continue
+                print("[visual-planner] giving up after 3 attempts")
+                return None
+
+            try:
+                raw = json.loads(text)
+            except json.JSONDecodeError as exc:
+                print(f"[visual-planner] JSON parse failed: {exc}")
+                print(f"[visual-planner] raw text head: {text[:200]!r}")
+                print(f"[visual-planner] raw text tail: {text[-200:]!r}")
+                if attempt < 3:
+                    continue
+                print("[visual-planner] giving up after 3 attempts")
+                return None
+
+            if not isinstance(raw, list):
+                print("[visual-planner] Gemini returned non-list; discarding all visuals")
+                return None
+
+            if path is not None:
+                try:
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text(text, "utf-8")
+                except OSError as exc:
+                    print(f"[visual-planner] cache write failed: {exc}")
+            return raw
+    return None
+
+
+_SOURCE_VISUAL_TYPES = frozenset({"flow", "hub", "comparison", "sequence"})
+
+
+def _match_narration_text(text: str) -> str:
+    """Lowercase and strip punctuation for narration/source comparison."""
+    text = text.lower()
+    text = re.sub(r"[^\w\s]", "", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _drop_unsupported_sources(
+    visual: dict[str, Any],
+    narration: str,
+    scene_num: int,
+) -> dict[str, Any] | None:
+    """Drop points whose `sources` entry is not in the scene's narration.
+
+    `sources` is positional: flow node labels, sequence step labels, hub
+    satellite labels, or comparison points (left side first, then right).
+    Returns None when too few items remain for a valid visual.
+    """
+    sources = visual.pop("sources", None)
+    if not isinstance(sources, list) or not sources:
+        return visual
+
+    narration_text = _match_narration_text(narration)
+
+    def supported(index: int) -> bool:
+        if index >= len(sources):
+            return True
+        source = sources[index]
+        if not isinstance(source, str) or not source.strip():
+            return True
+        return _match_narration_text(source) in narration_text
+
+    def label_of(item: Any) -> str:
+        if isinstance(item, dict):
+            return str(item.get("label", ""))
+        return str(item)
+
+    def drop(item: Any) -> None:
+        print(
+            f"[visual-planner] scene {scene_num}: "
+            f"dropped unsupported point: {label_of(item)}"
+        )
+
+    vtype = visual.get("type")
+    if vtype in ("flow", "sequence"):
+        key = "nodes" if vtype == "flow" else "steps"
+        items = visual.get(key)
+        if isinstance(items, list):
+            kept = []
+            for index, item in enumerate(items):
+                if supported(index):
+                    kept.append(item)
+                else:
+                    drop(item)
+            visual[key] = kept
+            if len(kept) < 2:
+                return None
+    elif vtype == "hub":
+        satellites = visual.get("satellites")
+        if isinstance(satellites, list):
+            kept = []
+            for index, item in enumerate(satellites):
+                if supported(index):
+                    kept.append(item)
+                else:
+                    drop(item)
+            visual["satellites"] = kept
+    elif vtype == "comparison":
+        cursor = 0
+        for side_name in ("left", "right"):
+            side = visual.get(side_name)
+            if not isinstance(side, dict):
+                continue
+            points = side.get("points")
+            if not isinstance(points, list):
+                continue
+            kept = []
+            for point in points:
+                if supported(cursor):
+                    kept.append(point)
+                else:
+                    drop(point)
+                cursor += 1
+            side["points"] = kept
+            if not kept:
+                return None
+
+    return visual
+
+
+def _validate_planner_scene(
+    item: Any,
+    narration: str,
+    scene_num: int,
+) -> dict[str, Any] | None:
+    """Validate one planner item.
+
+    Returns {concept, processKind, visual} with the visual normalised, or None
+    when the item itself is unusable. A bad visual never discards the concept.
+    """
+    if not isinstance(item, dict):
+        return None
+
+    try:
+        parsed = _PlannerSceneOutput.model_validate(item)
+    except Exception as exc:
+        print(f"[visual-planner] scene {scene_num} failed validation: {exc}")
+        return None
+
+    # Now validate the visual dict against the per-type Pydantic model.
+    visual_dict = parsed.visual
+    validated_visual: dict[str, Any] | None = None
+    if isinstance(visual_dict, dict):
+        if visual_dict.get("type") in _SOURCE_VISUAL_TYPES:
+            visual_dict = _drop_unsupported_sources(
+                visual_dict, narration, scene_num
+            )
+            if visual_dict is None:
+                return {
+                    "concept": parsed.concept,
+                    "processKind": parsed.processKind,
+                    "visual": None,
+                }
+        else:
+            visual_dict.pop("sources", None)
+
+        try:
+            vtype = visual_dict.get("type")
+            _model_map: dict[str, type[BaseModel]] = {
+                "flow": _FlowSpec, "hub": _HubSpec, "bars": _BarsSpec,
+                "sequence": _SequenceSpec, "cycle": _CycleSpec,
+                "layers": _LayersSpec, "anatomy": _AnatomySpec,
+                "comparison": _ComparisonSpec, "scene-graph": _SceneGraphSpec,
+            }
+
+            if vtype in _model_map:
+                validated = _model_map[vtype].model_validate(visual_dict)
+
+                # Bar values must be explicitly supported by this scene's narration.
+                if vtype == "bars":
+                    number_matches = re.findall(
+                        r"(?<![\w.])\d[\d,]*(?:\.\d+)?%?",
+                        narration,
+                    )
+                    narration_numbers = {
+                        float(number.rstrip("%").replace(",", ""))
+                        for number in number_matches
+                    }
+
+                    bar_values = [bar.value for bar in validated.bars]
+
+                    if not narration_numbers or any(
+                        not any(abs(value - spoken) < 1e-9 for spoken in narration_numbers)
+                        for value in bar_values
+                    ):
+                        raise ValueError(
+                            "Bar values must match numbers explicitly stated "
+                            "in the scene narration."
+                        )
+
+                validated_visual = validated.model_dump(
+                    exclude_none=True,
+                    by_alias=True,
+                )
+
+            elif vtype in _LIBRARY_TYPES:
+                # Library visuals have their own schemas in Remotion.
+                # Preserve their complete specs for the Remotion adapter.
+                validated = _LibrarySpec.model_validate(visual_dict)
+                validated_visual = validated.model_dump(
+                    exclude_none=True,
+                    by_alias=True,
+                )
+        except Exception as exc:
+            print(f"[visual-planner] scene {scene_num} visual invalid: {exc}")
+
+    return {
+        "concept": parsed.concept,
+        "processKind": parsed.processKind,
+        "visual": validated_visual,  # may be None → Remotion fallback
+    }
+
+
+def _validate_with_remotion(specs: list[Any]) -> list[dict[str, Any]] | None:
+    """Validate visual specs with the renderer's own Zod schemas.
+
+    Returns one {"ok": bool, ...} result per spec, or None when the validator
+    could not run. None means "unchecked", never "failed".
+    """
+    if not specs:
+        return []
+
+    try:
+        completed = subprocess.run(
+            ["npx", "tsx", "src/visuals/validate.ts"],
+            cwd=_REMOTION_DIR,
+            input=json.dumps(specs),
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        print(f"[visual-planner] Remotion validation unavailable: {exc}")
+        return None
+
+    if completed.returncode != 0:
+        details = (completed.stderr or completed.stdout).strip()[:500]
+        print(f"[visual-planner] Remotion validation failed: {details}")
+        return None
+
+    try:
+        results = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        print(f"[visual-planner] Remotion validation output unreadable: {exc}")
+        return None
+
+    if not isinstance(results, list) or len(results) != len(specs):
+        print("[visual-planner] Remotion validation output does not match its input")
+        return None
+
+    if not all(isinstance(item, dict) and "ok" in item for item in results):
+        print("[visual-planner] Remotion validation output malformed")
+        return None
+
+    return results
+
+
+def _remotion_failures(results: list[dict[str, Any] | None]) -> dict[int, str]:
+    """Indexes of results whose library visual the renderer rejects, with errors."""
+    indexes = [
+        index
+        for index, result in enumerate(results)
+        if result
+        and isinstance(result.get("visual"), dict)
+        and result["visual"].get("type") in _LIBRARY_TYPES
+    ]
+    if not indexes:
+        return {}
+
+    checks = _validate_with_remotion(
+        [results[index]["visual"] for index in indexes]
+    )
+    if checks is None:
+        return {}
+
+    failures: dict[int, str] = {}
+    for index, check in zip(indexes, checks):
+        if not check.get("ok"):
+            failures[index] = str(check.get("error") or "invalid visual")
+    return failures
+
+
+def _retry_rejected_visuals(
+    scenes: list[dict],
+    results: list[dict[str, Any] | None],
+    failures: dict[int, str],
+    topic: str,
+) -> list[dict[str, Any] | None]:
+    """Ask Gemini once to fix rejected visuals and merge the corrections in."""
+    indexes = sorted(failures)
+    feedback = "\n".join(
+        f"Scene {scenes[index]['scene_number']}: {failures[index]}"
+        for index in indexes
+    )
+
+    raw = _request_planner(
+        _retry_prompt([scenes[index] for index in indexes], topic, feedback)
+    )
+    if raw is None:
+        print("[visual-planner] retry call failed; keeping the rejected visuals")
+        return results
+
+    updated = list(results)
+    for position, index in enumerate(indexes):
+        if position >= len(raw):
+            break
+        corrected = _validate_planner_scene(
+            raw[position],
+            scenes[index].get("narration", ""),
+            scenes[index]["scene_number"],
+        )
+        if corrected is not None:
+            updated[index] = corrected
+    return updated
+
+
 def _call_gemini_planner(
     scenes: list[dict],
     topic: str,
@@ -322,138 +852,52 @@ def _call_gemini_planner(
     Returns a list parallel to `scenes` where each entry is either a dict
     with concept/processKind/visual, or None if planning failed for that scene.
     A failure on one scene never fails the whole call.
+
+    Library visuals are also checked against the renderer's schemas. Rejected
+    ones get one corrective Gemini call; anything still invalid afterwards
+    keeps its concept but loses the visual.
     """
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key or not api_key.strip():
-        return [None] * len(scenes)
-
-    try:
-        from google import genai
-        from google.genai import types
-    except ImportError:
-        return [None] * len(scenes)
-
-    scenes_text = "\n\n".join(
-        f"Scene {s['scene_number']}:\n"
-        f"Narration: {s['narration']}\n"
-        f"Visual direction: {s.get('visual_description', 'Choose a visual based on the narration.')}"
-        for s in scenes
-    )
-
-    prompt = (
-        f"Topic (for context only – do NOT let it bias visual-type selection):\n{topic}\n\n"
-        f"Scenes:\n{scenes_text}\n\n"
-        "Return a JSON array, one object per scene in order, each with fields: "
-        "concept, processKind, visual. "
-        "If you cannot design a valid visual for a scene, set visual to null."
-    )
-
-    try:
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model=os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite"),
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=_PLANNER_SYSTEM,
-                response_mime_type="application/json",
-                temperature=0.3,
-                max_output_tokens=4096,
-            ),
-        )
-        raw = json.loads(response.text or "[]")
-    except Exception as exc:
-        print(f"[visual-planner] Gemini call failed: {exc}")
-        return [None] * len(scenes)
-
-    if not isinstance(raw, list):
-        print("[visual-planner] Gemini returned non-list; discarding all visuals")
+    raw = _request_planner(_planner_prompt(scenes, topic))
+    if raw is None:
         return [None] * len(scenes)
 
     results: list[dict[str, Any] | None] = []
     for i, item in enumerate(raw[:len(scenes)]):
-        scene_num = scenes[i]["scene_number"] if i < len(scenes) else i + 1
-        if not isinstance(item, dict):
-            results.append(None)
-            continue
-        # Validate + normalise per scene – a bad spec for one scene must never
-        # raise; we just drop it and let Remotion fall back to legacy routing.
-        try:
-            parsed = _PlannerSceneOutput.model_validate(item)
-        except Exception as exc:
-            print(f"[visual-planner] scene {scene_num} failed validation: {exc}")
-            results.append(None)
-            continue
-
-        # Now validate the visual dict against the per-type Pydantic model.
-        visual_dict = parsed.visual
-        validated_visual: dict[str, Any] | None = None
-        if isinstance(visual_dict, dict):
-            try:
-                vtype = visual_dict.get("type")
-                _model_map: dict[str, type[BaseModel]] = {
-                    "flow": _FlowSpec, "hub": _HubSpec, "bars": _BarsSpec,
-                    "sequence": _SequenceSpec, "cycle": _CycleSpec,
-                    "layers": _LayersSpec, "anatomy": _AnatomySpec,
-                    "comparison": _ComparisonSpec, "scene-graph": _SceneGraphSpec,
-                }
-
-                if vtype in _model_map:
-                    validated = _model_map[vtype].model_validate(visual_dict)
-
-                    # Bar values must be explicitly supported by this scene's narration.
-                    if vtype == "bars":
-                        narration = scenes[i].get("narration", "")
-                        number_matches = re.findall(
-                            r"(?<![\w.])\d[\d,]*(?:\.\d+)?%?",
-                            narration,
-                        )
-                        narration_numbers = {
-                            float(number.rstrip("%").replace(",", ""))
-                            for number in number_matches
-                        }
-
-                        bar_values = [bar.value for bar in validated.bars]
-
-                        if not narration_numbers or any(
-                            not any(abs(value - spoken) < 1e-9 for spoken in narration_numbers)
-                            for value in bar_values
-                        ):
-                            raise ValueError(
-                                "Bar values must match numbers explicitly stated "
-                                "in the scene narration."
-                            )
-
-                    validated_visual = validated.model_dump(
-                        exclude_none=True,
-                        by_alias=True,
-                    )
-
-                elif vtype in _LIBRARY_TYPES:
-                    # Library visuals have their own schemas in Remotion.
-                    # Preserve their complete specs for the Remotion adapter.
-                    validated = _LibrarySpec.model_validate(visual_dict)
-                    validated_visual = validated.model_dump(
-                        exclude_none=True,
-                        by_alias=True,
-                    )
-            except Exception as exc:
-                print(f"[visual-planner] scene {scene_num} visual invalid: {exc}")
-
-        results.append({
-            "concept": parsed.concept,
-            "processKind": parsed.processKind,
-            "visual": validated_visual,  # may be None → Remotion fallback
-        })
+        results.append(
+            _validate_planner_scene(
+                item,
+                scenes[i].get("narration", ""),
+                scenes[i]["scene_number"],
+            )
+        )
 
     # Pad if Gemini returned fewer items than scenes
     while len(results) < len(scenes):
         results.append(None)
 
+    failures = _remotion_failures(results)
+    if failures:
+        print(
+            f"[visual-planner] {len(failures)} library visual(s) rejected by "
+            "the renderer; retrying once"
+        )
+        results = _retry_rejected_visuals(scenes, results, failures, topic)
+
+        still_invalid = _remotion_failures(results)
+        for index in sorted(still_invalid):
+            print(
+                f"[visual-planner] scene {scenes[index]['scene_number']}: "
+                "library visual still invalid, dropping it"
+            )
+            result = results[index]
+            if result is not None:
+                result["visual"] = None
+
     return results
 
 
 def _split_script(script: str) -> list[str]:
-    """Split narration into sentence-based segments with a word limit."""
+    """Split at sentence boundaries whenever a sentence is reasonably sized."""
     sentences = re.split(r"(?<=[.!?])\s+", script.strip())
     segments = []
 
@@ -463,12 +907,17 @@ def _split_script(script: str) -> list[str]:
         if not words:
             continue
 
+        # Preserve complete sentences up to 48 words to avoid broken narration.
+        if len(words) <= max(MAX_WORDS_PER_SCENE, 48):
+            segments.append(" ".join(words))
+            continue
+
+        # Only unusually long sentences need chunking.
         for start in range(0, len(words), MAX_WORDS_PER_SCENE):
             chunk = words[start : start + MAX_WORDS_PER_SCENE]
             segments.append(" ".join(chunk))
 
     return segments
-
 
 def _visual_description(topic: str, narration: str) -> str:
     """Describe a scene using its topic and actual narration."""
@@ -666,6 +1115,50 @@ def _visual_description(topic: str, narration: str) -> str:
 
 
 
+def _physics_visual_description(topic: str, narration: str) -> str:
+    """Describe the physics concept actually discussed in this scene."""
+    text = narration.casefold()
+
+    if re.search(
+        r"five connected ideas|five physics ideas|connecting .* ideas|"
+        r"together, (?:these concepts|these ideas|they link)",
+        text,
+    ):
+        focus = "an overview connecting forces, motion, and energy"
+    elif re.search(
+        r"projectile|trajectory|launched|thrown|"
+        r"horizontal.*vertical|vertical.*horizontal",
+        text,
+    ):
+        focus = "projectile trajectory with horizontal and vertical motion"
+    elif re.search(r"free fall|falling object", text):
+        focus = "an object accelerating under gravity during free fall"
+    elif re.search(
+        r"potential energy|gravitational potential|mgh|stored energy|"
+        r"height can represent",
+        text,
+    ):
+        focus = "gravitational potential energy and the role of height"
+    elif re.search(r"kinematics|velocity|displacement|speed|position", text):
+        focus = "kinematics quantities describing position and motion"
+    elif re.search(r"force|newton|free.body|friction|tension|acceleration", text):
+        focus = "the forces and motion relationships explained"
+    elif re.search(r"energy|kinetic|work done|power", text):
+        focus = "the energy transfers or transformations explained"
+    elif re.search(r"projectile|trajectory", topic.casefold()):
+        # Retain a useful fallback for vague projectile-motion narration.
+        focus = "projectile trajectory and the role of gravity"
+    else:
+        focus = "the physical quantities and relationships explained"
+
+    return (
+        f"Physics illustration focused on {focus}. "
+        "Show only quantities, vectors, trajectories, and relationships "
+        "supported by the topic and narration. "
+        f"Scene narration: {narration} "
+        "Avoid invented numerical values or unsupported assumptions."
+    )
+
 def _visual_label(text: str) -> str:
     """Create a short display label from words actually present in narration."""
     text = re.sub(r"^[\s,;:]+|[\s,;:]+$", "", text)
@@ -739,6 +1232,220 @@ def _water_cycle_visual(narration: str) -> dict | None:
             ],
             "footnote": "Relationship identified from the narration",
         }
+
+    return None
+
+
+
+def _physics_visual(topic: str, narration: str) -> dict | None:
+    """Build a concept-specific physics diagram from this scene's narration."""
+    text = narration.casefold()
+    focused_topic = topic.casefold().strip()
+
+    def graph(title, nodes, links, footnote):
+        # Reveal concepts first, then explain their relationships.
+        node_step = 0.24
+        link_step = 0.22
+        first_node_at = 0.2
+
+        staged_nodes = [
+            {**item, "appearAt": first_node_at + index * node_step}
+            for index, item in enumerate(nodes)
+        ]
+
+        first_link_at = first_node_at + len(staged_nodes) * node_step
+
+        staged_links = [
+            {**item, "appearAt": first_link_at + index * link_step}
+            for index, item in enumerate(links)
+        ]
+
+        return {
+            "type": "scene-graph",
+            "title": title,
+            "nodes": staged_nodes,
+            "links": staged_links,
+            "footnote": footnote,
+        }
+
+    def node(node_id, label, x, y, color):
+        return {
+            "id": node_id,
+            "label": label,
+            "x": x,
+            "y": y,
+            "size": 38,
+            "color": color,
+            "appearAt": 0.2,
+        }
+
+    def link(source, target, label, color="#4FD1C5"):
+        return {
+            "from": source,
+            "to": target,
+            "label": label,
+            "color": color,
+            "style": "solid",
+            "appearAt": 0.4,
+        }
+
+    # Overview scenes should connect the ideas instead of showing one concept.
+    if re.search(
+        r"\bfive connected ideas\b|\bfive physics ideas\b|"
+        r"\boverview of physics\b|\bthese concepts connect\b|"
+        r"\btogether, these ideas connect\b",
+        text,
+    ):
+        nodes = [
+            node("forces", "FORCES", 160, 105, "#4FD1C5"),
+            node("motion", "MOTION", 500, 105, "#F2B84B"),
+            node("gravity", "GRAVITY", 830, 105, "#E87979"),
+            node("trajectory", "TRAJECTORY", 300, 310, "#5B9BFF"),
+            node("energy", "POTENTIAL ENERGY", 700, 310, "#A78BFA"),
+        ]
+        return graph(
+            "Five Connected Physics Ideas",
+            nodes,
+            [
+                link("forces", "motion", "CHANGE MOTION"),
+                link("gravity", "trajectory", "SHAPES PATH"),
+                link("gravity", "energy", "RELATES TO HEIGHT"),
+                link("motion", "trajectory", "DESCRIBES"),
+            ],
+            "Conceptual connections; not a numerical model.",
+        )
+
+    # Projectile motion: distinguish horizontal and vertical motion.
+    if re.search(
+        r"\bprojectile\b|\btrajectory\b|\bhorizontal and vertical\b|"
+        r"\bvertical and horizontal\b|\bthrown object\b|"
+        r"\bobject is launched\b|\bcurved path\b",
+        text,
+    ):
+        return graph(
+            "Projectile Motion",
+            [
+                node("launch", "LAUNCH", 140, 210, "#F2B84B"),
+                node("horizontal", "HORIZONTAL MOTION", 440, 100, "#4FD1C5"),
+                node("vertical", "VERTICAL MOTION", 440, 320, "#E87979"),
+                node("gravity", "GRAVITY", 640, 400, "#F2B84B"),
+                node("path", "CURVED TRAJECTORY", 850, 210, "#5B9BFF"),
+            ],
+            [
+                link("launch", "horizontal", "HORIZONTAL COMPONENT"),
+                link("launch", "vertical", "VERTICAL COMPONENT"),
+                link("gravity", "vertical", "ACCELERATES"),
+                link("horizontal", "path", "COMBINES"),
+                link("vertical", "path", "COMBINES"),
+            ],
+            "Idealized trajectory; no launch speed or angle assumed.",
+        )
+
+    # Free fall: gravity changes downward velocity.
+    if re.search(
+        r"\bfree fall\b|\bfalling object\b|\bdropped object\b|"
+        r"\bfalls freely\b|\bfalls under gravity\b",
+        text,
+    ):
+        return graph(
+            "Free Fall",
+            [
+                node("object", "FALLING OBJECT", 180, 110, "#4FD1C5"),
+                node("gravity", "GRAVITY", 500, 110, "#F2B84B"),
+                node("acceleration", "DOWNWARD ACCELERATION", 500, 320, "#E87979"),
+                node("velocity", "VELOCITY", 820, 320, "#5B9BFF"),
+            ],
+            [
+                link("gravity", "acceleration", "CAUSES"),
+                link("acceleration", "velocity", "CHANGES"),
+                link("object", "velocity", "MOTION"),
+            ],
+            "Air resistance is neglected in the ideal free-fall model.",
+        )
+
+    # Gravitational potential energy: make height and mass explicit.
+    if re.search(
+        r"\bpotential energy\b|\bgravitational potential\b|\bmgh\b|"
+        r"\bstored energy\b",
+        text,
+    ):
+        return graph(
+            "Gravitational Potential Energy",
+            [
+                node("height", "HEIGHT ABOVE REFERENCE", 180, 110, "#4FD1C5"),
+                node("mass", "MASS", 180, 320, "#F2B84B"),
+                node("gravity", "GRAVITY", 500, 320, "#5B9BFF"),
+                node("energy", "POTENTIAL ENERGY", 820, 210, "#A78BFA"),
+            ],
+            [
+                link("height", "energy", "AFFECTS"),
+                link("mass", "energy", "AFFECTS"),
+                link("gravity", "energy", "AFFECTS"),
+            ],
+            "Gravitational potential energy depends on mass, gravity, and height.",
+        )
+
+    # Newton's second law: force, mass, and acceleration.
+    if re.search(
+        r"\bnewton(?:'s)? second law\b|\bnet force\b|"
+        r"\bforce.*\bmass\b.*\bacceleration\b|"
+        r"\bacceleration.*\bnet force\b|"
+        r"\bforces come first\b",
+        text,
+    ):
+        return graph(
+            "Newton's Second Law",
+            [
+                node("force", "NET FORCE", 180, 110, "#4FD1C5"),
+                node("mass", "MASS", 180, 320, "#F2B84B"),
+                node("acceleration", "ACCELERATION", 820, 210, "#A78BFA"),
+            ],
+            [
+                link("force", "acceleration", "PRODUCES"),
+                link("mass", "acceleration", "AFFECTS"),
+            ],
+            "For a fixed mass, greater net force produces greater acceleration.",
+        )
+
+    # Kinematics: represent change in position without inventing values.
+    if re.search(
+        r"\bkinematics\b|\bdisplacement\b|\bvelocity\b|"
+        r"\bposition over time\b|\bchange in position\b|"
+        r"\bnext, describe motion\b",
+        text,
+    ):
+        return graph(
+            "Describing Motion",
+            [
+                node("initial", "INITIAL POSITION", 160, 210, "#4FD1C5"),
+                node("final", "FINAL POSITION", 500, 100, "#F2B84B"),
+                node("time", "ELAPSED TIME", 500, 320, "#5B9BFF"),
+                node("displacement", "DISPLACEMENT", 830, 210, "#A78BFA"),
+            ],
+            [
+                link("initial", "displacement", "COMPARES WITH"),
+                link("final", "displacement", "CHANGE IN POSITION"),
+                link("time", "displacement", "OVER A TIME INTERVAL"),
+            ],
+            "Conceptual diagram; no numerical measurements assumed.",
+        )
+
+    # A single-concept topic may be vague in one scene. Do not use this
+    # fallback for a broad topic that lists several different concepts.
+    if re.fullmatch(r"(?:how does |how to understand )?projectile motion", focused_topic):
+        return graph(
+            "Projectile Motion",
+            [
+                node("launch", "LAUNCH", 160, 210, "#F2B84B"),
+                node("gravity", "GRAVITY", 500, 100, "#E87979"),
+                node("path", "CURVED PATH", 820, 210, "#5B9BFF"),
+            ],
+            [
+                link("launch", "path", "STARTS MOTION"),
+                link("gravity", "path", "BENDS TRAJECTORY"),
+            ],
+            "Idealized projectile motion.",
+        )
 
     return None
 
@@ -859,6 +1566,783 @@ def _semantic_visual(narration: str) -> dict | None:
         return None
 
 
+_MERGE_SORT_PHASES = frozenset({"overview", "split", "merge", "sorted"})
+_MERGE_INSERTION_RE = re.compile(
+    r"\bmerge[\s-]+insertion\b|\bford[\s\u2013-]+johnson\b",
+    re.IGNORECASE,
+)
+
+
+def _is_merge_insertion_sort(text: str) -> bool:
+    """True for Merge-Insertion / Ford-Johnson, which is not Merge Sort."""
+    return bool(_MERGE_INSERTION_RE.search(text))
+
+
+def _merge_sort_phase(sentence: str) -> str:
+    """Determine the Merge Sort visual phase from a scene's narration.
+
+    The algorithm name alone is not an action: a sentence that merely says
+    "merge sort" stays on the overview. Completed language is checked first so
+    "the result is fully sorted" wins over a nearby "merge" verb.
+    """
+    text = " ".join(sentence.casefold().split())
+    if not text or _is_merge_insertion_sort(text):
+        return "overview"
+
+    if (
+        re.search(
+            r"\b(?:fully|completely|finally|already|now)\s+(?:sorted|ordered)\b",
+            text,
+        )
+        or re.search(
+            r"\b(?:the\s+)?(?:final|finished|completed)\s+"
+            r"(?:array|list|result|output|sequence)\b[^.!?;]{0,24}"
+            r"\b(?:is\s+)?(?:now\s+|fully\s+)?(?:sorted|ordered)\b",
+            text,
+        )
+        or re.search(
+            r"\b(?:the\s+)?result\s+is\s+(?:a\s+|an\s+)?"
+            r"(?:now\s+|fully\s+)?(?:sorted|ordered)\b",
+            text,
+        )
+        or re.search(
+            r"\b(?:array|list|sequence)\s+is\s+"
+            r"(?:now\s+|fully\s+)?(?:sorted|ordered)\b",
+            text,
+        )
+        or re.search(
+            r"\b(?:array|list|sequence)\s+is\s+(?:now\s+)?"
+            r"(?:in\s+)?(?:ascending|descending)\s+order\b",
+            text,
+        )
+    ):
+        return "sorted"
+
+    if (
+        re.search(
+            r"\b(?:are|is|were|was|have\s+been|has\s+been)\s+"
+            r"(?:merged|combined)\b",
+            text,
+        )
+        or re.search(
+            r"\bmerg(?:e|es|ed|ing)\b(?![\s-]+sort\b)[^.!?;]{0,45}"
+            r"\b(?:halves|parts|lists|sub-?arrays|runs|pairs|results|back|together|them)\b",
+            text,
+        )
+        or re.search(
+            r"\bcombin(?:e|es|ed|ing)\b[^.!?;]{0,45}"
+            r"\b(?:halves|parts|lists|sub-?arrays|runs|pairs|results|sorted|them)\b",
+            text,
+        )
+        or re.search(r"\bput(?:s|ting)?\b[^.!?;]{0,24}\bback\s+together\b", text)
+    ):
+        return "merge"
+
+    if (
+        re.search(r"\bsplits?\b|\bsplitting\b", text)
+        or re.search(
+            r"\b(?:divides?|divided|dividing)\b[^.!?;]{0,30}"
+            r"\b(?:list|array|data|elements|sequence|problem|it)\b",
+            text,
+        )
+        or re.search(r"\b(?:halve|halved|halving)\b", text)
+        or re.search(r"\binto\s+(?:two\s+)?halves\b", text)
+        or re.search(r"\bsub-?arrays?\b", text)
+        or re.search(
+            r"\brecursively\s+(?:splits?|divides?|breaks?)\b", text
+        )
+        or re.search(
+            r"\bbreaks?\b[^.!?;]{0,30}"
+            r"\b(?:list|array|data|elements|sequence|halves|parts)\b",
+            text,
+        )
+    ):
+        return "split"
+
+    return "overview"
+
+
+_BINARY_SEARCH_PHASES = frozenset(
+    {"overview", "midpoint", "elimination", "found", "not-found"}
+)
+
+
+def _is_binary_search_topic(topic: str) -> bool:
+    topic_text = topic.lower()
+    return "binary search" in topic_text and "binary search tree" not in topic_text
+
+
+def _is_binary_search_tree_narration(narration: str) -> bool:
+    """True when narration explicitly discusses a binary search tree."""
+    return bool(
+        re.search(
+            r"\bbinary search trees?\b|\bbst\b",
+            narration,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _binary_search_phase(sentence: str) -> tuple[str, int]:
+    """Determine the binary-search visual phase from narration."""
+    if any(term in sentence for term in (
+        "remaining half being empty",
+        "not in the array",
+        "not found",
+        "absent",
+    )):
+        return "not-found", 20
+
+    if any(term in sentence for term in (
+        "eliminated",
+        "eliminate the half",
+        "cannot exist",
+        "remaining half",
+        "search continues",
+        "repeating this",
+        "narrowing down",
+        "dividing the list in half",
+    )):
+        return "elimination", 25
+
+    if any(term in sentence for term in (
+        "target value is found",
+        "target is found",
+        "target has been found",
+        "matches the middle",
+        "you are finished",
+        "two outcomes",
+    )):
+        return "found", 25
+
+    if any(term in sentence for term in (
+        "middle element",
+        "middle value",
+    )):
+        return "midpoint", 25
+
+    return "overview", 25
+
+def _deterministic_library_visual(
+    topic: str,
+    narration: str,
+) -> dict[str, Any] | None:
+    """Choose a registered Remotion visual from explicit CS scene content.
+
+    Example values in these specs are illustrative animation data, not facts
+    inferred from the narration.
+    """
+    topic_text = topic.lower()
+    sentence = narration.lower()
+
+    # Use the overall topic to recognize binary-search scenes even
+    # when individual narration sentences do not repeat the algorithm name.
+    is_binary_search_topic = _is_binary_search_topic(topic)
+
+    if is_binary_search_topic:
+        phase, target = _binary_search_phase(sentence)
+
+        return {
+            "type": "array",
+            "title": "Binary search",
+            "values": [3, 8, 12, 19, 25, 31, 42],
+            "algorithm": "binary-search",
+            "target": target,
+            "phase": phase,
+            "footnote": "Illustrative sorted array; indexes start at 0",
+        }
+
+    # Merge-Insertion / Ford-Johnson is a different algorithm; never let the
+    # word "merge" (or a "merge sort" topic) select a Merge Sort visual for it.
+    # A Merge Sort topic must not swallow a scene that explicitly discusses a
+    # different algorithm. If the narration also names Merge Sort (a contrast
+    # or comparison scene), keep the Merge Sort visual.
+    scene_algorithms = _named_algorithms(narration)
+    scene_is_explicitly_other = (
+        bool(scene_algorithms - {"merge-sort"})
+        and "merge-sort" not in scene_algorithms
+    )
+
+    merge_insertion = _is_merge_insertion_sort(f"{topic_text} {sentence}")
+    is_merge_sort_topic = (
+        ("merge sort" in topic_text or "merge sort" in sentence)
+        and not merge_insertion
+        and not scene_is_explicitly_other
+        and "binary search" not in topic_text
+    )
+
+    if is_merge_sort_topic:
+        return {
+            "type": "array",
+            "title": "Merge sort",
+            "values": [38, 27, 43, 3, 9, 82, 10],
+            "algorithm": "merge-sort",
+            "phase": _merge_sort_phase(sentence),
+            "footnote": "Illustrative values",
+        }
+
+    # More specific database concepts must win over generic table/code matches.
+    if "index" in sentence and any(
+        term in sentence for term in ("database", "query", "row", "scan")
+    ):
+        return {
+            "type": "indexscan",
+            "title": "Finding a row with an index",
+            "values": [42, 7, 19, 88, 3, 56, 71, 25],
+            "target": 71,
+        }
+
+    if "join" in sentence and any(
+        term in sentence for term in ("sql", "table", "database", "rows")
+    ):
+        return {
+            "type": "join",
+            "title": "Combining related tables",
+            "left": {
+                "name": "users",
+                "columns": ["id", "name"],
+                "rows": [[1, "Ana"], [2, "Ben"], [3, "Cara"]],
+            },
+            "right": {
+                "name": "orders",
+                "columns": ["user_id", "item"],
+                "rows": [[1, "Book"], [1, "Pen"], [3, "Bag"]],
+            },
+            "on": {"left": "id", "right": "user_id"},
+            "joinType": "left",
+        }
+
+    if any(term in sentence for term in ("replication", "replica", "replicas")):
+        return {
+            "type": "replication",
+            "title": "Database replication",
+            "replicas": 2,
+            "mode": "async",
+            "writes": 3,
+            "failover": True,
+        }
+
+    if any(term in sentence for term in ("sharding", "shard key", "shards")):
+        return {
+            "type": "sharding",
+            "title": "Splitting data across shards",
+            "shards": 3,
+            "keys": ["ana", "ben", "cara", "dan", "eli", "fay"],
+            "strategy": "hash",
+        }
+
+    if any(term in sentence for term in ("lru cache", "cache hit", "cache miss", "cache eviction")):
+        return {
+            "type": "cache",
+            "title": "How a cache works",
+            "capacity": 3,
+            "policy": "lru",
+            "accesses": ["A", "B", "C", "A", "D", "B"],
+        }
+
+    if "binary search" in sentence and "binary search tree" not in sentence:
+        phase, target = _binary_search_phase(sentence)
+
+        return {
+            "type": "array",
+            "title": "Binary search",
+            "values": [3, 8, 12, 19, 25, 31, 42],
+            "algorithm": "binary-search",
+            "target": target,
+            "phase": phase,
+        }
+    if any(term in sentence for term in ("bubble sort", "sorts an array")):
+        return {
+            "type": "array",
+            "title": "Bubble sort",
+            "values": [5, 2, 9, 1, 7, 3],
+            "algorithm": "bubble-sort",
+            "footnote": "Large values bubble toward the end",
+        }
+
+    if "linear search" in sentence:
+        return {
+            "type": "array",
+            "title": "Linear search",
+            "values": [5, 2, 9, 1, 7, 3],
+            "algorithm": "linear-search",
+            "target": 7,
+        }
+
+    if any(term in sentence for term in ("binary search tree", "bst", "tree traversal", "parent node", "child node")):
+        return {
+            "type": "tree",
+            "title": "Traversing a binary tree",
+            "values": [8, 3, 10, 1, 6, 14, 4],
+            "algorithm": "inorder",
+        }
+
+    if any(term in sentence for term in ("stack", "queue", "linked list", "push", "pop", "enqueue", "dequeue")):
+        kind = "queue" if any(
+            term in sentence for term in ("queue", "enqueue", "dequeue")
+        ) else "stack"
+        return {
+            "type": "chain",
+            "title": "Working with a " + kind,
+            "kind": kind,
+            "values": [4, 7, 2] if kind == "stack" else [1, 2, 3],
+            "ops": (
+                [{"op": "pop"}, {"op": "push", "value": 9}]
+                if kind == "stack"
+                else [{"op": "dequeue"}, {"op": "enqueue", "value": 4}]
+            ),
+        }
+
+    if any(term in sentence for term in ("breadth-first search", "bfs", "depth-first search", "dfs", "graph traversal")):
+        algorithm = "bfs" if any(
+            term in sentence for term in ("breadth-first search", "bfs")
+        ) else "dfs"
+        return {
+            "type": "graph",
+            "title": "Graph traversal",
+            "nodes": ["A", "B", "C", "D", "E", "F"],
+            "edges": [
+                {"from": "A", "to": "B"},
+                {"from": "A", "to": "C"},
+                {"from": "B", "to": "D"},
+                {"from": "B", "to": "E"},
+                {"from": "C", "to": "F"},
+            ],
+            "algorithm": algorithm,
+            "start": "A",
+        }
+
+    if any(term in sentence for term in ("http request", "api request", "request and response", "client-server", "rest api")):
+        return {
+            "type": "exchange",
+            "title": "A client-server request",
+            "actors": ["Browser", "Server", "Database"],
+            "messages": [
+                {"from": "Browser", "to": "Server", "label": "Request"},
+                {"from": "Server", "to": "Database", "label": "Query"},
+                {"from": "Database", "to": "Server", "label": "Result", "reply": True},
+                {"from": "Server", "to": "Browser", "label": "Response", "reply": True},
+            ],
+        }
+
+    if any(term in sentence for term in ("load balancer", "load balancing")):
+        return {
+            "type": "balancer",
+            "title": "Distributing incoming traffic",
+        }
+
+    if any(term in sentence for term in ("consistent hashing", "hash ring")):
+        return {
+            "type": "ring",
+            "title": "Consistent hashing",
+        }
+
+    if any(term in sentence for term in ("deployment pipeline", "ci/cd", "continuous integration", "continuous delivery")):
+        return {
+            "type": "pipeline",
+            "title": "A CI/CD pipeline",
+            "stages": [
+                {"name": "Build", "jobs": ["Compile"]},
+                {"name": "Test", "jobs": ["Unit tests", "Integration tests"]},
+                {"name": "Deploy", "jobs": ["Release"]},
+            ],
+        }
+
+    if any(term in sentence for term in ("canary release", "blue-green deployment", "deployment strategy")):
+        return {
+            "type": "deploy",
+            "title": "A staged deployment",
+            "strategy": "canary",
+            "instances": 4,
+            "from": "v1",
+            "to": "v2",
+        }
+
+    if any(term in sentence for term in ("system architecture", "software architecture", "three-tier architecture")):
+        return {
+            "type": "architecture",
+            "title": "A web application architecture",
+            "nodes": [
+                {"id": "client", "label": "Client", "kind": "client"},
+                {"id": "server", "label": "Application server", "kind": "server"},
+                {"id": "database", "label": "Database", "kind": "database"},
+            ],
+            "links": [
+                {"from": "client", "to": "server"},
+                {"from": "server", "to": "database"},
+            ],
+            "path": ["client", "server", "database"],
+        }
+
+    if any(term in sentence for term in ("python code", "for loop", "variable", "function definition", "execute this code")):
+        return {
+            "type": "code",
+            "title": "A small Python program",
+            "language": "python",
+            "lines": [
+                "total = 0",
+                "for n in [1, 2, 3]:",
+                "    total += n",
+                "print(total)",
+            ],
+            "steps": [
+                {"line": 1, "note": "Start the total at zero"},
+                {"line": 2, "note": "Visit each number"},
+                {"line": 3, "note": "Add the current number"},
+                {"line": 4, "note": "Display the total", "output": "6"},
+            ],
+        }
+
+    if any(term in sentence for term in ("sql table", "database table", "rows and columns", "select query")):
+        return {
+            "type": "table",
+            "title": "Selecting rows from a table",
+            "name": "users",
+            "columns": ["id", "name", "age", "city"],
+            "rows": [
+                [1, "Ana", 31, "Lima"],
+                [2, "Ben", 24, "Nairobi"],
+                [3, "Cara", 29, "Accra"],
+            ],
+            "query": {
+                "kind": "select",
+                "columns": ["name", "age"],
+                "where": {"column": "age", "op": ">", "value": 27},
+            },
+        }
+
+    if any(term in sentence for term in ("array", "list of elements", "element at index")):
+        return {
+            "type": "array",
+            "title": "An array of values",
+            "values": [3, 8, 12, 19, 25, 31, 42],
+            "algorithm": "none",
+            "footnote": "Illustrative values; indexes start at 0",
+        }
+
+    return None
+
+
+def _align_visual_data(scenes: list[dict]) -> list[tuple[dict, dict]]:
+    """Reuse the first scene's input data for later visuals of the same kind.
+
+    Arrays are grouped by algorithm, so a merge-sort scene never inherits a
+    bubble-sort array's values. Trees and graphs share their data within the
+    type, since traversal modes run on the same structure.
+
+    Returns (scene, original visual) for every visual it changed, so the caller
+    can validate the result and roll back a scene.
+    """
+    first_array: dict[str, dict[str, Any]] = {}
+    first_tree: dict[str, Any] | None = None
+    first_graph: dict[str, Any] | None = None
+    changed: list[tuple[dict, dict]] = []
+
+    for scene in scenes:
+        visual = scene.get("visual")
+        if not isinstance(visual, dict):
+            continue
+
+        vtype = visual.get("type")
+        if vtype == "array":
+            algorithm = visual.get("algorithm")
+            if not isinstance(algorithm, str) or algorithm == "none":
+                continue
+            source = first_array.setdefault(algorithm, visual)
+            if source is not visual:
+                changed.append((scene, copy.deepcopy(visual)))
+                if "values" in source:
+                    visual["values"] = list(source["values"])
+
+                if algorithm in ("binary-search", "linear-search"):
+                    values = visual.get("values") or []
+                    if values and not (
+                        visual.get("target") in values
+                        or visual.get("phase") == "not-found"
+                    ):
+                        source_target = source.get("target")
+                        if source_target in values:
+                            visual["target"] = source_target
+                        else:
+                            visual["target"] = values[len(values) // 2]
+        elif vtype == "tree":
+            if first_tree is None:
+                first_tree = visual
+            elif "values" in first_tree:
+                changed.append((scene, copy.deepcopy(visual)))
+                visual["values"] = list(first_tree["values"])
+        elif vtype == "graph":
+            if first_graph is None:
+                first_graph = visual
+            else:
+                changed.append((scene, copy.deepcopy(visual)))
+                if "nodes" in first_graph:
+                    visual["nodes"] = list(first_graph["nodes"])
+                if "edges" in first_graph:
+                    visual["edges"] = [
+                        dict(edge) for edge in first_graph["edges"]
+                    ]
+
+                nodes = visual.get("nodes") or []
+                if nodes and visual.get("start") not in nodes:
+                    source_start = first_graph.get("start")
+                    visual["start"] = (
+                        source_start if source_start in nodes else nodes[0]
+                    )
+
+    return changed
+
+
+_REUSABLE_VISUAL_TYPES = frozenset({"array", "tree", "chain", "graph"})
+
+# Canonical names for algorithms the narration or topic may mention. The visual
+# algorithm slugs (merge-sort, insertion-sort, ...) match these canonical names
+# so a scene about one algorithm never inherits another's topic visual.
+_ALGORITHM_NAMES: dict[str, str] = {
+    "bubble sort": "bubble-sort",
+    "selection sort": "selection-sort",
+    "insertion sort": "insertion-sort",
+    "merge insertion sort": "merge-insertion-sort",
+    "merge insertion": "merge-insertion-sort",
+    "merge sort": "merge-sort",
+    "quick sort": "quick-sort",
+    "heap sort": "heap-sort",
+    "shell sort": "shell-sort",
+    "counting sort": "counting-sort",
+    "radix sort": "radix-sort",
+    "bucket sort": "bucket-sort",
+    "tim sort": "tim-sort",
+    "binary search": "binary-search",
+    "linear search": "linear-search",
+    "depth first search": "depth-first-search",
+    "breadth first search": "breadth-first-search",
+    "dijkstra": "dijkstra",
+}
+
+
+def _named_algorithms(text: str) -> set[str]:
+    """Return the canonical algorithm names mentioned in text."""
+    normalized = re.sub(r"[\s_-]+", " ", text.casefold()).strip()
+    if not normalized:
+        return set()
+    return {
+        canonical
+        for name, canonical in _ALGORITHM_NAMES.items()
+        if re.search(rf"\b{re.escape(name)}\b", normalized)
+    }
+
+
+def _reuse_topic_visuals(
+    scenes: list[dict],
+    planner_results: list[dict[str, Any] | None],
+    topic: str = "",
+) -> None:
+    """Copy an existing algorithm visual onto middle scenes the planner left null.
+
+    The first non-"none" array/tree/chain/graph visual in the video is treated
+    as the topic visual. Opening and closing scenes are left alone, and contrast
+    scenes are skipped because they describe a different idea. A scene whose
+    narration names an algorithm other than the topic's is also skipped: in a
+    merge sort video, for example, an insertion sort scene must stay null.
+    """
+    source = None
+    for scene in scenes:
+        visual = scene.get("visual")
+        if (
+            isinstance(visual, dict)
+            and visual.get("type") in _REUSABLE_VISUAL_TYPES
+            and visual.get("algorithm", "none") != "none"
+            and not _is_merge_insertion_sort(str(scene.get("narration", "")))
+        ):
+            source = visual
+            break
+
+    if source is None:
+        return
+
+    topic_algorithms = _named_algorithms(topic)
+    if not topic_algorithms:
+        source_algorithm = source.get("algorithm")
+        if isinstance(source_algorithm, str):
+            topic_algorithms = {source_algorithm}
+
+    last_index = len(scenes) - 1
+    for index, scene in enumerate(scenes):
+        if index == 0 or index == last_index:
+            continue
+        if index >= len(planner_results):
+            continue
+        plan = planner_results[index]
+        if plan is None or plan.get("visual") is not None:
+            continue
+        if scene.get("processKind") == "contrast":
+            continue
+        if scene.get("visual") is not None:
+            continue
+        narration_algorithms = _named_algorithms(str(scene.get("narration", "")))
+        if narration_algorithms - topic_algorithms:
+            continue
+
+        reused = copy.deepcopy(source)
+        reused.pop("phase", None)
+        scene["visual"] = reused
+        print(
+            f"[visual-planner] scene {scene['scene_number']}: reusing topic visual"
+        )
+
+
+def _assign_merge_sort_phases(scenes: list[dict]) -> None:
+    """Ensure Merge Sort scenes have a phase derived from their narration.
+
+    Reused topic visuals deliberately drop the source phase. Gemini also omits
+    the optional phase in practice, so this post-pass is the single place that
+    guarantees a scene-specific stage. Invalid phases (for example a
+    binary-search phase on a Merge Sort visual) are replaced rather than left
+    to the renderer's all-frames fallback.
+
+    Merge-Insertion / Ford-Johnson scenes must not keep a Merge Sort visual at
+    all; that algorithm is a different topic and would be taught incorrectly.
+
+    If no scene yields a reliable non-overview phase, a deterministic editorial
+    plan supplies phase diversity. That plan is NOT a claim that the narration
+    describes the assigned stage; it exists only so a generic Merge Sort video
+    does not render the same overview panel in every scene.
+    """
+    eligible_for_fallback: list[dict] = []
+    has_phase_evidence = False
+
+    for scene in scenes:
+        visual = scene.get("visual")
+        if not isinstance(visual, dict):
+            continue
+        if visual.get("type") != "array" or visual.get("algorithm") != "merge-sort":
+            continue
+
+        narration = str(scene.get("narration", ""))
+        concept = str(scene.get("concept", ""))
+        narration_merge_insertion = _is_merge_insertion_sort(narration)
+        narration_merge_sort = "merge-sort" in _named_algorithms(narration)
+        concept_merge_insertion = _is_merge_insertion_sort(concept)
+
+        # The narration is authoritative. A concept that mentions
+        # Merge-Insertion only as a comparison must not delete a legitimate
+        # Merge Sort visual; without Merge Sort in the narration, keep the
+        # conservative drop for an otherwise ambiguous Merge-Insertion scene.
+        if narration_merge_insertion or (
+            concept_merge_insertion and not narration_merge_sort
+        ):
+            scene.pop("visual", None)
+            print(
+                f"[visual-planner] scene {scene['scene_number']}: "
+                "dropped Merge Sort visual for Merge-Insertion Sort"
+            )
+            continue
+
+        phase = visual.get("phase")
+        if phase in _MERGE_SORT_PHASES:
+            if phase != "overview":
+                has_phase_evidence = True
+            continue
+
+        # A scene that explicitly discusses another algorithm must not receive
+        # an editorial Merge Sort phase from the topic-level fallback.
+        narration_algorithms = _named_algorithms(narration)
+        if (
+            narration_algorithms - {"merge-sort"}
+            and "merge-sort" not in narration_algorithms
+        ):
+            continue
+
+        inferred = _merge_sort_phase(narration)
+        visual["phase"] = inferred
+        eligible_for_fallback.append(scene)
+        if inferred != "overview":
+            has_phase_evidence = True
+
+    if has_phase_evidence:
+        return
+
+    # All eligible scenes were generic overviews. Use a stable editorial plan
+    # rather than pretending the narration supports a particular stage.
+    fallback_plan = ("overview", "split", "merge", "sorted")
+    for index, scene in enumerate(eligible_for_fallback):
+        scene["visual"]["phase"] = fallback_plan[index % len(fallback_plan)]
+
+
+def _repair_binary_search_visuals(
+    scenes: list[dict],
+    topic: str,
+    category: str,
+) -> None:
+    """Fill missing or conflicting Binary Search visuals for a CS Binary Search topic.
+
+    This only runs for a CS topic whose overall subject is Binary Search. A
+    scene that names another algorithm or explicitly discusses a binary search
+    tree is left untouched. Existing Binary Search visuals are left for the
+    phase post-pass, preserving their phases and targets.
+    """
+    if category != "cs" or not _is_binary_search_topic(topic):
+        return
+
+    for scene in scenes:
+        narration = str(scene.get("narration", ""))
+        if _is_binary_search_tree_narration(narration):
+            continue
+        if _named_algorithms(narration) - {"binary-search"}:
+            continue
+
+        visual = scene.get("visual")
+        if isinstance(visual, dict):
+            if visual.get("algorithm") == "binary-search":
+                continue
+            # Only an array with a different algorithm is a clear conflict.
+            # Other visual types are intentionally preserved.
+            if visual.get("type") != "array":
+                continue
+        elif visual is not None:
+            continue
+
+        fallback = _deterministic_library_visual(topic, narration)
+        if (
+            isinstance(fallback, dict)
+            and fallback.get("type") == "array"
+            and fallback.get("algorithm") == "binary-search"
+        ):
+            scene["visual"] = fallback
+
+
+def _assign_binary_search_phases(scenes: list[dict]) -> None:
+    """Fill missing or invalid Binary Search phases from scene narration.
+
+    Existing valid phases and search targets are preserved. Scenes that
+    explicitly name another algorithm are skipped so a Binary Search visual
+    cannot inherit a phase from unrelated narration. Scenes are never removed.
+    """
+    for scene in scenes:
+        visual = scene.get("visual")
+        if not isinstance(visual, dict):
+            continue
+        if visual.get("type") != "array":
+            continue
+        if visual.get("algorithm") != "binary-search":
+            continue
+
+        phase = visual.get("phase")
+        if phase in _BINARY_SEARCH_PHASES:
+            continue
+
+        narration = str(scene.get("narration", ""))
+        narration_algorithms = _named_algorithms(narration)
+        if (
+            narration_algorithms - {"binary-search"}
+            and "binary-search" not in narration_algorithms
+        ):
+            continue
+
+        inferred, _target = _binary_search_phase(narration.casefold())
+        visual["phase"] = inferred
+
+
 def scene_planner_node(
     state: VideoState,
     *,
@@ -890,7 +2374,11 @@ def scene_planner_node(
         scene: dict[str, Any] = {
             "scene_number": number,
             "narration": narration,
-            "visual_description": _visual_description(topic, narration),
+            "visual_description": (
+                _physics_visual_description(topic, narration)
+                if state.get("category", "cs") == "physics"
+                else _visual_description(topic, narration)
+            ),
             "duration_seconds": duration,
         }
 
@@ -899,7 +2387,21 @@ def scene_planner_node(
         if use_semantic_graph:
             visual = _semantic_visual(narration)
 
-        # Preserve the existing deterministic visual planner as the fallback.
+        # The Gemini planner picks CS library visuals; the deterministic
+        # selector only runs as a per-scene fallback when that call fails.
+        if (
+            visual is None
+            and state.get("category", "cs") == "cs"
+            and not use_gemini_planner
+        ):
+            visual = _deterministic_library_visual(topic, narration)
+
+        # Give physics scenes a concept-specific diagram before the
+        # generic relationship parser gets a chance to create a weak match.
+        if visual is None and state.get("category", "cs") == "physics":
+            visual = _physics_visual(topic, narration)
+
+        # Preserve the existing relationship diagram as the next fallback.
         if visual is None:
             visual = _structured_visual(narration)
 
@@ -909,13 +2411,27 @@ def scene_planner_node(
         scenes.append(scene)
 
     # ── Gemini intelligent visual planner ────────────────────────────────────
-    # Runs after the deterministic pass so any validated planner result wins.
     if use_gemini_planner:
         planner_results = _call_gemini_planner(scenes, topic)
         for scene, plan in zip(scenes, planner_results):
             sn = scene["scene_number"]
             if plan is None:
                 print(f"[visual-planner] scene {sn}: no planner output, keeping legacy")
+                # Only when the planner call itself failed: fall back to the
+                # deterministic library selector for CS scenes with no visual.
+                if (
+                    state.get("category", "cs") == "cs"
+                    and scene.get("visual") is None
+                ):
+                    fallback = _deterministic_library_visual(
+                        topic, scene["narration"]
+                    )
+                    if fallback is not None:
+                        scene["visual"] = fallback
+                        print(
+                            f"[visual-planner] scene {sn}: deterministic "
+                            f"{fallback.get('type', '?')} fallback"
+                        )
                 continue
             # Write concept + processKind into the scene (Remotion ignores them)
             scene["concept"] = plan["concept"]
@@ -929,8 +2445,31 @@ def scene_planner_node(
                 )
             else:
                 print(
-                    f"[visual-planner] scene {sn}: planner visual invalid, "
-                    "keeping legacy"
+                    f"[visual-planner] scene {sn}: planner returned no visual"
                 )
+
+        # Keep one algorithm video's input data identical across its scenes.
+        aligned = _align_visual_data(scenes)
+        if aligned:
+            checks = _validate_with_remotion(
+                [scene["visual"] for scene, _ in aligned]
+            )
+            if checks is None:
+                for scene, original in aligned:
+                    scene["visual"] = original
+            else:
+                for (scene, original), check in zip(aligned, checks):
+                    if not check.get("ok"):
+                        scene["visual"] = original
+
+        _reuse_topic_visuals(scenes, planner_results, topic)
+
+    # Apply to planner, fallback, and reused visuals alike. This is what makes
+    # the stored phase independent of whether Gemini remembered to emit one.
+    _assign_merge_sort_phases(scenes)
+    _repair_binary_search_visuals(
+        scenes, topic, state.get("category", "cs")
+    )
+    _assign_binary_search_phases(scenes)
 
     return {"scenes": scenes}

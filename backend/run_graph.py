@@ -1,10 +1,21 @@
+import json
 import argparse
 import asyncio
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from app.graph.workflow import build_graph
 from app.services.narration import DEFAULT_VOICE, generate_narration
+from app.services.remotion_renderer import render_remotion_video
+from app.services.physics_animation_dispatcher import render_physics_clips
 from app.services.video_renderer import render_video
+
+
+BACKEND_DIR = Path(__file__).resolve().parent
+# The web API spawns this script without exporting backend/.env, so load it
+# here before build_graph resolves the visual planner.
+load_dotenv(BACKEND_DIR / ".env")
 
 
 def main():
@@ -16,6 +27,12 @@ def main():
         nargs="?",
         default="How vaccines work",
         help="Topic to explain in the video.",
+    )
+    parser.add_argument(
+        "--category",
+        choices=("cs", "physics"),
+        default="cs",
+        help="Subject category for the explainer (default: cs).",
     )
     parser.add_argument(
         "--gemini",
@@ -30,7 +47,18 @@ def main():
     parser.add_argument(
         "--visual-planner",
         action="store_true",
-        help="Use Gemini to plan per-scene visuals (concept, processKind, visual spec).",
+        default=None,
+        help=(
+            "Use Gemini to plan per-scene visuals (concept, processKind, "
+            "visual spec). Defaults to the VISUAL_PLANNER/GEMINI_API_KEY "
+            "environment rule."
+        ),
+    )
+    parser.add_argument(
+        "--no-visual-planner",
+        dest="visual_planner",
+        action="store_false",
+        help="Disable the Gemini visual planner.",
     )
     parser.add_argument(
         "--audio",
@@ -41,6 +69,12 @@ def main():
         "--video",
         action="store_true",
         help="Generate narration and render an MP4 video.",
+    )
+    parser.add_argument(
+        "--renderer",
+        choices=("remotion", "ffmpeg"),
+        default="remotion",
+        help="Video renderer: Remotion by default, or legacy FFmpeg.",
     )
     parser.add_argument(
         "--voice",
@@ -62,6 +96,7 @@ def main():
 
     initial_state = {
         "topic": args.topic,
+        "category": args.category,
         "research_notes": [],
         "research_sources": [],
         "research_quality": "insufficient",
@@ -80,6 +115,7 @@ def main():
 
     print("\n=== EXPLAINER VIDEO AGENT ===")
     print(f"Topic: {result['topic']}")
+    print(f"Category: {result.get('category', 'cs')}")
     print(f"Scriptwriter: {writer}")
     print(f"Revisions: {result['revision_count']}")
     print(f"Research quality: {result.get('research_quality', 'unknown')}")
@@ -116,6 +152,19 @@ def main():
             print(f"Narration: {scene['narration']}")
             print(f"Visual direction: {scene['visual_description']}")
 
+            if scene.get("concept"):
+                print(f"Visual concept: {scene['concept']}")
+
+            if scene.get("processKind"):
+                print(f"Process kind: {scene['processKind']}")
+
+            visual = scene.get("visual")
+            if isinstance(visual, dict):
+                print("Planned visual specification:")
+                print(json.dumps(visual, indent=2, ensure_ascii=False))
+            else:
+                print("Planned visual specification: none")
+
         minutes, seconds = divmod(total_duration, 60)
         print(
             f"\nTotal estimated duration: "
@@ -136,6 +185,7 @@ def main():
                     output_dir=args.output_dir,
                     voice=args.voice,
                     topic=result["topic"],
+                    category=args.category,
                 )
             )
             print(f"Audio directory: {args.output_dir}")
@@ -149,19 +199,58 @@ def main():
             )
             print("Audio manifest: manifest.json")
 
+            # Attach dedicated Manim animations to supported Physics scenes.
+            # Remotion still assembles the full narrated explainer.
+            if (
+                args.video
+                and args.renderer == "remotion"
+                and args.category == "physics"
+            ):
+                clip_result = render_physics_clips(
+                    manifest_path=Path(args.output_dir) / "manifest.json",
+                    output_dir=Path(args.output_dir) / "physics_clips",
+                )
+
+                if clip_result["status"] == "rendered":
+                    for clip in clip_result["clips"]:
+                        print(
+                            f"Manim animation {clip['animation']} attached "
+                            f"to scene(s) {clip['scene_numbers']}: "
+                            f"{clip['clip_file']}"
+                        )
+
+                    for scene in clip_result["unsupported_scenes"]:
+                        print(
+                            "Manim animation not available for scene "
+                            f"{scene['scene_number']}: "
+                            f"{scene['narration']}"
+                        )
+                else:
+                    print(
+                        "Manim animations skipped: "
+                        f"{clip_result['reason']}"
+                    )
+
             if args.video:
                 print("\n=== RENDERING MP4 VIDEO ===")
                 output_path = Path(args.output_dir) / "explainer.mp4"
 
-                video = render_video(
-                    scenes=scenes,
-                    narration_manifest_path=(
-                        Path(args.output_dir) / "manifest.json"
-                    ),
-                    output_path=output_path,
-                    topic=args.topic,
-                )
+                if args.renderer == "remotion":
+                    video = render_remotion_video(
+                        manifest_path=Path(args.output_dir) / "manifest.json",
+                        output_path=output_path,
+                    )
+                else:
+                    video = render_video(
+                        scenes=scenes,
+                        narration_manifest_path=(
+                            Path(args.output_dir) / "manifest.json"
+                        ),
+                        output_path=output_path,
+                        topic=args.topic,
+                    )
 
+                print(f"Renderer: {video.get('renderer', args.renderer)}")
                 print(f"Video: {video['output_file']}")
                 print(
                     f"Resolution: {video['width']}x{video['height']} "

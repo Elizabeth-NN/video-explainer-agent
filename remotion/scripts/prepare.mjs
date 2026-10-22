@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -43,6 +43,7 @@ const height = 720;
 
 let startFrame = 0;
 const scenes = [];
+const videoCopies = [];
 
 for (const [index, scene] of manifest.scenes.entries()) {
   const sceneNumber = Number(scene.scene_number);
@@ -77,6 +78,64 @@ for (const [index, scene] of manifest.scenes.entries()) {
   // Check that this scene's audio exists before copying it.
   await readFile(sourceAudio);
 
+  // Physics scenes may optionally provide a Manim MP4 path relative
+  // to the repository root. CS scenes need no video_file field.
+  let videoCopy;
+  if (scene.video_file !== undefined) {
+    const videoPath = scene.video_file;
+
+    if (
+      typeof videoPath !== "string" ||
+      !videoPath.trim() ||
+      path.isAbsolute(videoPath)
+    ) {
+      throw new Error(
+        `Invalid video_file for scene ${sceneNumber}: expected a relative project path.`,
+      );
+    }
+
+    const sourceVideo = path.resolve(projectRoot, videoPath);
+    const relativeVideo = path.relative(projectRoot, sourceVideo);
+
+    if (
+      relativeVideo === ".." ||
+      relativeVideo.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(relativeVideo)
+    ) {
+      throw new Error(
+        `Video path for scene ${sceneNumber} must stay inside the project.`,
+      );
+    }
+
+    if (path.extname(sourceVideo).toLowerCase() !== ".mp4") {
+      throw new Error(
+        `Video for scene ${sceneNumber} must be an MP4 file.`,
+      );
+    }
+
+    // Check the file without loading the entire video into memory.
+    let videoInfo;
+    try {
+      videoInfo = await stat(sourceVideo);
+    } catch {
+      throw new Error(
+        `Video for scene ${sceneNumber} does not exist or cannot be accessed: ${videoPath}`,
+      );
+    }
+
+    if (!videoInfo.isFile()) {
+      throw new Error(
+        `Video for scene ${sceneNumber} must point to a file: ${videoPath}`,
+      );
+    }
+
+    videoCopy = {
+      source: sourceVideo,
+      publicFile: `videos/scene_${String(sceneNumber).padStart(3, "0")}.mp4`,
+    };
+    videoCopies.push(videoCopy);
+  }
+
   const durationInFrames = Math.ceil(durationSeconds * fps);
 
   scenes.push({
@@ -87,6 +146,7 @@ for (const [index, scene] of manifest.scenes.entries()) {
       ? { visual: scene.visual }
       : {}),
     audioFile: `audio/${audioFile}`,
+    ...(videoCopy ? { videoFile: videoCopy.publicFile } : {}),
     durationInFrames,
     from: startFrame,
   });
@@ -105,8 +165,23 @@ for (const scene of manifest.scenes) {
   );
 }
 
+if (videoCopies.length > 0) {
+  const publicVideos = path.join(here, "../public/videos");
+  await mkdir(publicVideos, { recursive: true });
+
+  for (const video of videoCopies) {
+    await copyFile(
+      video.source,
+      path.join(publicVideos, path.basename(video.publicFile)),
+    );
+  }
+}
+
 const props = {
   topic: manifest.topic.trim(),
+  ...(manifest.category === "cs" || manifest.category === "physics"
+    ? { category: manifest.category }
+    : {}),
   fps,
   width,
   height,

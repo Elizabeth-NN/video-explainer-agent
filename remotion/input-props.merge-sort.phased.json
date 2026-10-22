@@ -1,0 +1,224 @@
+{
+  "topic": "merge sort",
+  "category": "cs",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Imagine exploring merge sort and discovering how it works.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: Imagine exploring merge sort and discovering how it works. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "visual": {
+        "type": "array",
+        "values": [
+          38,
+          27,
+          43,
+          3,
+          9,
+          82,
+          10
+        ],
+        "algorithm": "merge-sort",
+        "footnote": "Illustrative values",
+        "phase": "overview"
+      },
+      "audioFile": "audio/scene_001.mp3",
+      "durationInFrames": 98,
+      "from": 0
+    },
+    {
+      "sceneNumber": 2,
+      "narration": "The key is to understand the evidence behind merge sort.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: The key is to understand the evidence behind merge sort. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "visual": {
+        "type": "array",
+        "values": [
+          38,
+          27,
+          43,
+          3,
+          9,
+          82,
+          10
+        ],
+        "algorithm": "merge-sort",
+        "footnote": "Illustrative values",
+        "phase": "split"
+      },
+      "audioFile": "audio/scene_002.mp3",
+      "durationInFrames": 91,
+      "from": 98
+    },
+    {
+      "sceneNumber": 3,
+      "narration": "Start with the main process and the details that explain it.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: Start with the main process and the details that explain it. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "visual": {
+        "type": "array",
+        "values": [
+          38,
+          27,
+          43,
+          3,
+          9,
+          82,
+          10
+        ],
+        "algorithm": "merge-sort",
+        "footnote": "Illustrative values",
+        "phase": "merge"
+      },
+      "audioFile": "audio/scene_003.mp3",
+      "durationInFrames": 98,
+      "from": 189
+    },
+    {
+      "sceneNumber": 4,
+      "narration": "Merge sort is an efficient, general-purpose, comparison-based sorting algorithm.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: Merge sort is an efficient, general-purpose, comparison-based sorting algorithm. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "visual": {
+        "type": "array",
+        "values": [
+          38,
+          27,
+          43,
+          3,
+          9,
+          82,
+          10
+        ],
+        "algorithm": "merge-sort",
+        "footnote": "Illustrative values",
+        "phase": "sorted"
+      },
+      "audioFile": "audio/scene_004.mp3",
+      "durationInFrames": 132,
+      "from": 287
+    },
+    {
+      "sceneNumber": 5,
+      "narration": "Most implementations of merge sort are stable, which means that the relative order of equal elements is the same between the input and output.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: Most implementations of merge sort are stable, which means that the relative order of equal elements is the same between the input and output. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "visual": {
+        "type": "array",
+        "values": [
+          38,
+          27,
+          43,
+          3,
+          9,
+          82,
+          10
+        ],
+        "algorithm": "merge-sort",
+        "footnote": "Illustrative values",
+        "phase": "overview"
+      },
+      "audioFile": "audio/scene_005.mp3",
+      "durationInFrames": 198,
+      "from": 419
+    },
+    {
+      "sceneNumber": 6,
+      "narration": "Merge sort is a divide-and-conquer algorithm that was invented by John von Neumann in 1945.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: Merge sort is a divide-and-conquer algorithm that was invented by John von Neumann in 1945. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "visual": {
+        "type": "array",
+        "values": [
+          38,
+          27,
+          43,
+          3,
+          9,
+          82,
+          10
+        ],
+        "algorithm": "merge-sort",
+        "footnote": "Illustrative values",
+        "phase": "split"
+      },
+      "audioFile": "audio/scene_006.mp3",
+      "durationInFrames": 158,
+      "from": 617
+    },
+    {
+      "sceneNumber": 7,
+      "narration": "A detailed description and analysis of bottom-up merge sort appeared in a report by Goldstine and von Neumann as early as 1948.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: A detailed description and analysis of bottom-up merge sort appeared in a report by Goldstine and von Neumann as early as 1948. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "visual": {
+        "type": "array",
+        "values": [
+          38,
+          27,
+          43,
+          3,
+          9,
+          82,
+          10
+        ],
+        "algorithm": "merge-sort",
+        "footnote": "Illustrative values",
+        "phase": "merge"
+      },
+      "audioFile": "audio/scene_007.mp3",
+      "durationInFrames": 203,
+      "from": 775
+    },
+    {
+      "sceneNumber": 8,
+      "narration": "In computer science, merge-insertion sort or the Ford\u2013Johnson algorithm is a comparison sorting algorithm published in 1959 by L.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: In computer science, merge-insertion sort or the Ford\u2013Johnson algorithm is a comparison sorting algorithm published in 1959 by L. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "audioFile": "audio/scene_008.mp3",
+      "durationInFrames": 224,
+      "from": 978
+    },
+    {
+      "sceneNumber": 9,
+      "narration": "It uses fewer comparisons in the worst case than the best previously known algorithms, binary insertion sort and merge sort, and for 20 years it was the sorting algorithm with the fewest known comparisons.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: It uses fewer comparisons in the worst case than the best previously known algorithms, binary insertion sort and merge sort, and for 20 years it was the sorting algorithm with the fewest known comparisons. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "visual": {
+        "type": "array",
+        "values": [
+          38,
+          27,
+          43,
+          3,
+          9,
+          82,
+          10
+        ],
+        "algorithm": "merge-sort",
+        "footnote": "Illustrative values",
+        "phase": "sorted"
+      },
+      "audioFile": "audio/scene_009.mp3",
+      "durationInFrames": 305,
+      "from": 1202
+    },
+    {
+      "sceneNumber": 10,
+      "narration": "These details connect the main ideas and show how the process works, while keeping the explanation grounded in the available evidence.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: These details connect the main ideas and show how the process works, while keeping the explanation grounded in the available evidence. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "visual": {
+        "type": "array",
+        "values": [
+          38,
+          27,
+          43,
+          3,
+          9,
+          82,
+          10
+        ],
+        "algorithm": "merge-sort",
+        "footnote": "Illustrative values",
+        "phase": "overview"
+      },
+      "audioFile": "audio/scene_010.mp3",
+      "durationInFrames": 194,
+      "from": 1507
+    }
+  ]
+}

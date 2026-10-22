@@ -4,6 +4,7 @@ import { findVisual, type LibrarySpec } from "./visuals";
 import {
   AbsoluteFill,
   Audio,
+  OffthreadVideo,
   Sequence,
   staticFile,
   interpolate,
@@ -23,6 +24,13 @@ import {
   Footnote,
   ACCENTS,
 } from "./visuals/kit";
+import {
+  binarySearchPhaseFromNarration,
+  isBinarySearchPhase,
+  isMergeInsertionSort,
+  isMergeSortPhase,
+  mergeSortPhaseFromNarration,
+} from "./visuals/algorithms";
 /* ──────────────────────────────────────────────────────────────
    Types
    ────────────────────────────────────────────────────────────── */
@@ -108,6 +116,8 @@ export type ExplainerScene = {
   narration: string;
   visualDescription: string;
   audioFile: string;
+  /** Optional silent video clip, relative to Remotion's public directory. */
+  videoFile?: string;
   durationInFrames: number;
   from: number;
   visual?: VisualSpec;
@@ -118,6 +128,7 @@ export type ExplainerScene = {
 
 export type ExplainerProps = {
   topic: string;
+  category?: "cs" | "physics";
   fps: number;
   width: number;
   height: number;
@@ -939,7 +950,14 @@ const SceneGraphDiagram: React.FC<{
 
       <Footnote
         text={spec.footnote}
-        at={s(0.5) + spec.nodes.length * s(0.18) + s(0.5)}
+        at={s(Math.max(
+          0.5 + spec.nodes.length * 0.18 + 0.5,
+          ...spec.nodes.map((node, index) =>
+            (node.appearAt ?? 0.2 + index * 0.18) + 0.45
+          ),
+          ...spec.links.map((link) => (link.appearAt ?? 0.4) + 0.55
+          ),
+        ) + 0.15)}
       />
     </>
   );
@@ -1122,6 +1140,222 @@ const fallbackSpec = (scene: ExplainerScene): VisualSpec => {
     nodes: parts.map((p, i) => ({ label: shortLabel(p), icon: icons[i], color: colors[i] })),
   };
 };
+
+/** Physics fallback for legacy or invalid planned visuals. */
+const physicsFallbackSpec = (
+  scene: ExplainerScene,
+  topic: string,
+): VisualSpec => {
+  const text = `${topic} ${scene.narration} ${scene.visualDescription || ""}`;
+
+  if (/projectile|launch angle|trajectory/i.test(text)) {
+    return {
+      type: "flow",
+      title: "Projectile Motion",
+      nodes: [
+        { label: "LAUNCH SPEED", icon: "bolt", color: "gold" },
+        { label: "GRAVITY", icon: "dot", color: "purple" },
+        { label: "TRAJECTORY", icon: "check", color: "teal" },
+      ],
+      footnote: "Gravity changes the projectile's vertical motion",
+    };
+  }
+
+  if (/free fall|falling object|falls freely/i.test(text)) {
+    return {
+      type: "flow",
+      title: "Free Fall",
+      nodes: [
+        { label: "GRAVITY", icon: "dot", color: "purple" },
+        { label: "FALLING OBJECT", icon: "gear", color: "gold" },
+        { label: "CHANGING SPEED", icon: "bolt", color: "teal" },
+      ],
+    };
+  }
+
+  if (/potential energy|gravitational energy/i.test(text)) {
+    return {
+      type: "flow",
+      title: "Gravitational Potential Energy",
+      nodes: [
+        { label: "MASS", icon: "dot", color: "teal" },
+        { label: "HEIGHT", icon: "gear", color: "gold" },
+        { label: "STORED ENERGY", icon: "bolt", color: "purple" },
+      ],
+      footnote: "Potential energy depends on mass, gravity, and height",
+    };
+  }
+
+  if (/newton.?s second law|net force|force.*mass|mass.*acceleration/i.test(text)) {
+    return {
+      type: "flow",
+      title: "Newton's Second Law",
+      nodes: [
+        { label: "NET FORCE", icon: "bolt", color: "gold" },
+        { label: "MASS", icon: "dot", color: "teal" },
+        { label: "ACCELERATION", icon: "gear", color: "purple" },
+      ],
+      footnote: "For a given mass, greater net force produces greater acceleration",
+    };
+  }
+
+  if (/kinematics|velocity|displacement|acceleration/i.test(text)) {
+    return {
+      type: "flow",
+      title: "Describing Motion",
+      nodes: [
+        { label: "POSITION", icon: "dot", color: "teal" },
+        { label: "VELOCITY", icon: "bolt", color: "gold" },
+        { label: "ACCELERATION", icon: "gear", color: "purple" },
+      ],
+    };
+  }
+
+  const extracted = fallbackSpec(scene);
+  if (
+    extracted.type === "flow" &&
+    !extracted.nodes.every((node) =>
+      ["INPUT", "PROCESS", "OUTCOME"].includes(node.label),
+    )
+  ) {
+    return { ...extracted, title: extracted.title || "Physics Concept" };
+  }
+
+  return {
+    type: "flow",
+    title: "Physics Concept",
+    nodes: [
+      { label: "PHYSICAL SYSTEM", icon: "dot", color: "teal" },
+      { label: "INTERACTION", icon: "gear", color: "gold" },
+      { label: "MEASURABLE CHANGE", icon: "check", color: "purple" },
+    ],
+  };
+};
+
+/** Other algorithms that must not be replaced by a topic-level Merge Sort fallback. */
+const COMPETING_ALGORITHM_RE =
+  /\b(?:insertion|bubble|selection)[\s-]+sort\b|\bbinary[\s-]+search\b|\bmerge[\s-]+insertion\b|\bford[\s\u2013-]+johnson\b/i;
+
+const allowsMergeSortFallback = (
+  scene: ExplainerScene,
+  topic: string,
+): boolean => {
+  const sceneText = `${scene.narration} ${scene.visualDescription || ""}`;
+  if (isMergeInsertionSort(sceneText)) return false;
+
+  const sceneMentionsMergeSort = /\bmerge[\s-]+sort\b/i.test(sceneText);
+  if (sceneMentionsMergeSort) return true;
+
+  const sceneMentionsOther = COMPETING_ALGORITHM_RE.test(sceneText);
+  return /\bmerge[\s-]+sort\b/i.test(topic) && !sceneMentionsOther;
+};
+
+/** CS fallback for legacy or invalid planned visuals. */
+const csFallbackSpec = (
+  scene: ExplainerScene,
+  topic: string,
+): VisualSpec => {
+  const text = `${topic} ${scene.narration} ${scene.visualDescription || ""}`;
+
+  // Use the existing array visual when binary-search scenes lack
+  // a valid planner-provided visual.
+  if (/binary[\s-]+search|half-interval search/i.test(text)) {
+    const phase = binarySearchPhaseFromNarration(scene.narration);
+    const target = phase === "not-found" ? 26 : 25;
+
+    return {
+      type: "array",
+      title: "Binary Search",
+      values: [3, 8, 12, 19, 25, 31, 42],
+      algorithm: "binary-search",
+      target,
+      phase,
+    };
+  }
+
+  // Merge-Insertion / Ford-Johnson is a different algorithm, and a scene that
+  // explicitly discusses another algorithm must not inherit the Merge Sort
+  // topic visual. A contrast scene that names both still keeps Merge Sort.
+  if (allowsMergeSortFallback(scene, topic)) {
+    return {
+      type: "array",
+      title: "Merge Sort",
+      values: [38, 27, 43, 3, 9, 82, 10],
+      algorithm: "merge-sort",
+      phase: mergeSortPhaseFromNarration(scene.narration),
+      footnote: "Illustrative values",
+    };
+  }
+
+  if (/sort(?:ing)?|search(?:ing)?|algorithm/i.test(text)) {
+    return {
+      type: "flow",
+      title: "Algorithm Execution",
+      nodes: [
+        { label: "DATA", icon: "dot", color: "teal" },
+        { label: "ALGORITHM", icon: "gear", color: "gold" },
+        { label: "RESULT", icon: "check", color: "purple" },
+      ],
+    };
+  }
+
+  if (/database|query|records|tables/i.test(text)) {
+    return {
+      type: "flow",
+      title: "Database Query",
+      nodes: [
+        { label: "QUERY", icon: "dot", color: "gold" },
+        { label: "DATABASE", icon: "gear", color: "teal" },
+        { label: "RESULTS", icon: "check", color: "purple" },
+      ],
+    };
+  }
+
+  if (/client|server|api|network|request|response/i.test(text)) {
+    return {
+      type: "flow",
+      title: "Request and Response",
+      nodes: [
+        { label: "CLIENT REQUEST", icon: "dot", color: "teal" },
+        { label: "SERVER LOGIC", icon: "gear", color: "gold" },
+        { label: "RESPONSE", icon: "check", color: "purple" },
+      ],
+    };
+  }
+
+  if (/machine learning|training data|model prediction|neural network/i.test(text)) {
+    return {
+      type: "flow",
+      title: "Machine Learning",
+      nodes: [
+        { label: "TRAINING DATA", icon: "dot", color: "teal" },
+        { label: "MODEL", icon: "gear", color: "gold" },
+        { label: "PREDICTION", icon: "check", color: "purple" },
+      ],
+    };
+  }
+
+  const extracted = fallbackSpec(scene);
+  if (
+    extracted.type === "flow" &&
+    !extracted.nodes.every((node) =>
+      ["INPUT", "PROCESS", "OUTCOME"].includes(node.label),
+    )
+  ) {
+    return { ...extracted, title: extracted.title || "Computing Concept" };
+  }
+
+  return {
+    type: "flow",
+    title: "Computing Concept",
+    nodes: [
+      { label: "DATA OR CODE", icon: "dot", color: "teal" },
+      { label: "COMPUTATION", icon: "gear", color: "gold" },
+      { label: "RESULT", icon: "check", color: "purple" },
+    ],
+  };
+};
+
 
 /**
  * Choose solar illustrations by the actual concept being narrated,
@@ -1415,11 +1649,48 @@ export const resolveVisual = (raw: unknown): VisualSpec | null => {
   return normalize(data as VisualSpec);
 };
 
-const resolveSpec = (scene: ExplainerScene, topic: string): VisualSpec => {
+export const resolveVisualSpec = (
+  scene: ExplainerScene,
+  topic: string,
+  category?: "cs" | "physics",
+): VisualSpec => {
   const planned = resolveVisual(scene.visual);
-  if (planned) return planned;
+  let rejectedMergeInsertion = false;
 
-  if (scene.visual) console.warn(`[visual] scene ${scene.sceneNumber}: invalid visual, using legacy routing`);
+  if (planned) {
+    if (planned.type === "array" && planned.algorithm === "merge-sort") {
+      // Old manifests have no phase. Repair them at render time so the
+      // existing input-props.json does not need a backend rerun.
+      if (
+        isMergeInsertionSort(
+          `${scene.narration} ${scene.visualDescription || ""}`,
+        )
+      ) {
+        rejectedMergeInsertion = true;
+        console.warn(
+          `[visual] scene ${scene.sceneNumber}: ignoring Merge Sort visual for Merge-Insertion Sort`,
+        );
+      } else {
+        const phase = isMergeSortPhase(planned.phase)
+          ? planned.phase
+          : mergeSortPhaseFromNarration(scene.narration);
+        return { ...planned, phase };
+      }
+    } else if (planned.type === "array" && planned.algorithm === "binary-search") {
+      // Old Binary Search props can also omit the phase. Preserve a valid
+      // phase and the planned target; otherwise infer from this scene.
+      const phase = isBinarySearchPhase(planned.phase)
+        ? planned.phase
+        : binarySearchPhaseFromNarration(scene.narration);
+      return { ...planned, phase };
+    } else {
+      return planned;
+    }
+  }
+
+  if (scene.visual && !rejectedMergeInsertion) {
+    console.warn(`[visual] scene ${scene.sceneNumber}: invalid visual, using legacy routing`);
+  }
   // ── LEGACY: delete once planner output matches or beats it ──
   const sceneText = `${scene.narration} ${scene.visualDescription || ""}`;
   const pick = pickIllustration(topic, sceneText);
@@ -1438,6 +1709,12 @@ const resolveSpec = (scene: ExplainerScene, topic: string): VisualSpec => {
   );
   if (vaccineTopic) return vaccineSpecForScene(scene);
 
+  // When a category is known, use a relevant category-specific fallback
+  // instead of cycling through a topic preset by scene number.
+  if (category === "physics") return physicsFallbackSpec(scene, topic);
+  if (category === "cs") return csFallbackSpec(scene, topic);
+
+  // Backwards compatibility for older manifests without a category.
   const preset = PRESETS.find((p) => p.match.test(topic));
   if (preset) return preset.specs[(scene.sceneNumber - 1) % preset.specs.length];
 
@@ -1509,11 +1786,17 @@ const Caption: React.FC<{ text: string; duration: number }> = ({ text, duration 
   );
 };
 
-const Scene: React.FC<{ scene: ExplainerScene; topic: string; totalScenes: number }> = ({
-  scene, topic, totalScenes,
-}) => {
+const Scene: React.FC<{
+  scene: ExplainerScene;
+  topic: string;
+  category?: "cs" | "physics";
+  totalScenes: number;
+}> = ({ scene, topic, category, totalScenes }) => {
   const { frame, s } = useT();
-  const spec = useMemo(() => resolveSpec(scene, topic), [scene, topic]);
+  const spec = useMemo(
+    () => resolveVisualSpec(scene, topic, category),
+    [scene, topic, category],
+  );
   const title = sceneTitle(spec, scene);
 
   // Fade in only; the outgoing scene stays mounted underneath for OVERLAP frames.
@@ -1568,7 +1851,20 @@ const Scene: React.FC<{ scene: ExplainerScene; topic: string; totalScenes: numbe
         transform: `scale(${(0.96 + 0.04 * panelIn) * drift})`,
         transformOrigin: "center",
       }}>
-        <Diagram spec={spec} duration={scene.durationInFrames} />
+        {scene.videoFile ? (
+          <OffthreadVideo
+            src={staticFile(scene.videoFile)}
+            muted
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "contain",
+              borderRadius: 12,
+            }}
+          />
+        ) : (
+          <Diagram spec={spec} duration={scene.durationInFrames} />
+        )}
       </div>
 
       <div style={{
@@ -1592,7 +1888,9 @@ const Scene: React.FC<{ scene: ExplainerScene; topic: string; totalScenes: numbe
    Root composition
    ────────────────────────────────────────────────────────────── */
 
-export const Explainer: React.FC<ExplainerProps> = ({ topic, scenes }) => (
+export const Explainer: React.FC<ExplainerProps> = ({
+  topic, category, scenes,
+}) => (
   <AbsoluteFill style={{ backgroundColor: C.bg }}>
     {scenes.map((scene) => (
       <React.Fragment key={scene.sceneNumber}>
@@ -1601,7 +1899,12 @@ export const Explainer: React.FC<ExplainerProps> = ({ topic, scenes }) => (
           durationInFrames={scene.durationInFrames + OVERLAP}
           name={`Scene ${scene.sceneNumber}`}
         >
-          <Scene scene={scene} topic={topic} totalScenes={scenes.length} />
+          <Scene
+            scene={scene}
+            topic={topic}
+            category={category}
+            totalScenes={scenes.length}
+          />
         </Sequence>
         <Sequence
           from={scene.from}

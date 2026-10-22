@@ -1,7 +1,8 @@
 - array: a row of values. Use for arrays, sorting, searching, indexing.
   {"type":"array","values":[5,2,9,1,7],"algorithm":"bubble-sort","target":7}
-  values: 2-10 non-negative numbers. algorithm: none | bubble-sort | selection-sort | insertion-sort | binary-search | linear-search.
+  values: 2-10 non-negative numbers. algorithm: none | bubble-sort | selection-sort | insertion-sort | merge-sort | binary-search | linear-search.
   target: only for the two searches. NEVER write the steps; the renderer computes them.
+  phase (binary-search: overview | midpoint | elimination | found | not-found; merge-sort: overview | split | merge | sorted), to show one stage per scene.
 - tree: a binary search tree built by inserting values in order. Use for BSTs, tree traversal, heaps-as-trees, hierarchy of depth.
   {"type":"tree","values":[8,3,10,1,6,14],"algorithm":"inorder"}
   values: 1-9 distinct numbers. algorithm: none | insert | inorder | preorder | postorder | bfs. NEVER write the steps.

@@ -1,0 +1,21 @@
+{
+  "types": [
+    "array",
+    "tree",
+    "chain",
+    "graph",
+    "exchange",
+    "code",
+    "architecture",
+    "balancer",
+    "ring",
+    "cache",
+    "pipeline",
+    "deploy",
+    "table",
+    "join",
+    "indexscan",
+    "replication",
+    "sharding"
+  ]
+}

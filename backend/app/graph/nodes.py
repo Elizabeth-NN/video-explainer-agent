@@ -2,6 +2,9 @@ import json
 import math
 import os
 import re
+import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import quote, urlsplit, urlunsplit
 
@@ -18,11 +21,81 @@ USER_AGENT = "ExplainerVideoAgent/0.1 (educational research prototype)"
 
 # Research tuning. Each planned query costs one search plus one summary
 # request per new article, so keep these modest.
-MAX_PLANNED_QUERIES = 4        # planner queries used after the original topic
+MAX_PLANNED_QUERIES = 5        # planner queries used after the original topic
 MAX_GAP_QUERIES = 2            # extra searches for uncovered key questions
 INITIAL_SEARCH_LIMIT = 10      # results for the user's original topic
 RELATED_SEARCH_LIMIT = 5       # results for each planned or gap query
 MAX_JUDGED_CANDIDATES = 25     # candidates sent to the relevance judge
+
+WIKIPEDIA_MAX_ATTEMPTS = 3
+WIKIPEDIA_MAX_RETRY_DELAY = 30
+
+
+def _wikipedia_get(
+    url,
+    *,
+    params=None,
+    headers=None,
+    timeout=15,
+):
+    """Make a Wikipedia request with bounded retries for transient failures."""
+    request_headers = {"User-Agent": USER_AGENT}
+    if headers:
+        request_headers.update(headers)
+
+    for attempt in range(WIKIPEDIA_MAX_ATTEMPTS):
+        try:
+            response = requests.get(
+                url,
+                params=params,
+                headers=request_headers,
+                timeout=timeout,
+            )
+        except requests.RequestException:
+            if attempt == WIKIPEDIA_MAX_ATTEMPTS - 1:
+                raise
+            time.sleep(2 ** attempt)
+            continue
+
+        status = getattr(response, "status_code", 200)
+        if not isinstance(status, int):
+            status = 200
+
+        if status == 429 or 500 <= status < 600:
+            if attempt == WIKIPEDIA_MAX_ATTEMPTS - 1:
+                response.raise_for_status()
+
+            headers = getattr(response, "headers", {}) or {}
+            retry_after = headers.get("Retry-After")
+            delay = None
+
+            if retry_after:
+                try:
+                    delay = float(retry_after)
+                except (TypeError, ValueError):
+                    try:
+                        retry_time = parsedate_to_datetime(retry_after)
+                        if retry_time.tzinfo is None:
+                            retry_time = retry_time.replace(tzinfo=timezone.utc)
+                        delay = (
+                            retry_time - datetime.now(timezone.utc)
+                        ).total_seconds()
+                    except (TypeError, ValueError, OverflowError):
+                        delay = None
+
+            if delay is None:
+                delay = 2 ** attempt
+
+            time.sleep(
+                min(max(delay, 0), WIKIPEDIA_MAX_RETRY_DELAY)
+            )
+            continue
+
+        response.raise_for_status()
+        return response
+
+    raise RuntimeError("Wikipedia request retries were exhausted.")
+
 
 # Critic tuning: fraction of the planner's required concepts that the
 # script must mention before it can be approved.
@@ -175,16 +248,79 @@ def _clean_concepts(value: object, limit: int = 6) -> list[dict]:
 # Research planning
 # ---------------------------------------------------------------------------
 
+_PHYSICS_CONCEPTS = (
+    {
+        "concept": "Newton's second law",
+        "markers": ("newton", "net force", "force mass acceleration"),
+        "query": "Newton's laws of motion",
+        "question": "How do net force, mass, and acceleration relate?",
+        "keywords": ["newton", "net force", "mass", "acceleration"],
+    },
+    {
+        "concept": "Kinematics",
+        "markers": ("kinematics",),
+        "query": "Kinematics",
+        "question": "How are position, displacement, velocity, and acceleration related?",
+        "keywords": ["kinematics", "displacement", "velocity", "acceleration"],
+    },
+    {
+        "concept": "Free fall",
+        "markers": ("free fall", "falling object"),
+        "query": "Free fall",
+        "question": "How does gravity affect a freely falling object?",
+        "keywords": ["free fall", "gravity", "falling object", "gravitational acceleration"],
+    },
+    {
+        "concept": "Projectile motion",
+        "markers": ("projectile",),
+        "query": "Projectile motion",
+        "question": "How do launch speed and angle affect a projectile's path?",
+        "keywords": ["projectile", "trajectory", "launch angle", "parabolic"],
+    },
+    {
+        "concept": "Gravitational potential energy",
+        "markers": ("potential energy", "mgh"),
+        "query": "Gravitational potential energy mass height mgh",
+        "question": "How are mass, height, and gravitational potential energy related?",
+        "keywords": ["potential energy", "gravitational potential", "height", "mgh"],
+    },
+)
+
+
+def _physics_fallback_plan(topic: str) -> dict | None:
+    """Build a deterministic plan when a topic names recognised physics concepts."""
+    normalized = " ".join(topic.casefold().split())
+    selected = [
+        item for item in _PHYSICS_CONCEPTS
+        if any(marker in normalized for marker in item["markers"])
+    ]
+
+    if not selected:
+        return None
+
+    return {
+        "search_queries": [item["query"] for item in selected],
+        "key_questions": [item["question"] for item in selected],
+        "required_concepts": [
+            {
+                "concept": item["concept"],
+                "keywords": item["keywords"],
+            }
+            for item in selected
+        ],
+    }
+
+
 def plan_research(topic: str) -> dict:
-    """Plan the research for any topic.
+    """Plan research while preserving recognised physics concepts.
 
-    Gemini suggests searches, questions, and concepts. It never supplies
-    evidence; the research node retrieves and checks real sources.
-
-    Falls back to a plan containing only the original topic.
+    Gemini can add useful searches, but it must not accidentally remove
+    the deterministic concept coverage for a multi-concept physics topic.
     """
     topic = topic.strip()
-    fallback = {
+    physics_plan = _physics_fallback_plan(topic)
+
+    fallback = physics_plan or {
         "search_queries": [topic],
         "key_questions": [],
         "required_concepts": [],
@@ -194,31 +330,50 @@ def plan_research(topic: str) -> dict:
         "You are planning research for a short explainer video. Suggest "
         "Wikipedia searches that would retrieve useful background, list "
         "the questions the video should answer, and list the concepts a "
-        "script must cover. Do not answer the questions or state facts.\n\n"
-        "Return JSON with exactly these fields:\n"
+        "script must cover. Do not answer the questions or state facts.\\n\\n"
+        "Return JSON with exactly these fields:\\n"
         "- search_queries: 3 to 5 Wikipedia article titles or short search "
         "phrases, covering different aspects of the topic. Be specific "
-        "enough to avoid unrelated namesakes.\n"
-        "- key_questions: 3 to 5 questions the explanation should answer.\n"
+        "enough to avoid unrelated namesakes.\\n"
+        "- key_questions: 3 to 5 questions the explanation should answer.\\n"
         "- required_concepts: 3 to 5 objects, each with a short "
         "\"concept\" description and a \"keywords\" list of 2 to 4 "
         "lowercase words or phrases (including common synonyms) that "
-        "would likely appear in a script explaining that concept.\n\n"
+        "would likely appear in a script explaining that concept.\\n\\n"
         f"Topic: {topic}"
     )
 
     data = _gemini_json(prompt, max_output_tokens=800)
+
     if data is None:
         return fallback
 
-    queries = _clean_str_list(data.get("search_queries"), MAX_PLANNED_QUERIES + 1)
+    gemini_queries = _clean_str_list(
+        data.get("search_queries"),
+        MAX_PLANNED_QUERIES + 1,
+    )
+    gemini_questions = _clean_str_list(data.get("key_questions"), 5)
+    gemini_concepts = _clean_concepts(data.get("required_concepts"))
+
+    if physics_plan is not None:
+        # Put all five concept-specific searches first. The original topic
+        # is searched separately by research_node.
+        queries = _clean_str_list(
+            physics_plan["search_queries"] + gemini_queries,
+            MAX_PLANNED_QUERIES + 1,
+        )
+        questions = physics_plan["key_questions"]
+        concepts = physics_plan["required_concepts"]
+    else:
+        queries = gemini_queries or [topic]
+        questions = gemini_questions
+        concepts = gemini_concepts
 
     return {
         "search_queries": queries or [topic],
-        "key_questions": _clean_str_list(data.get("key_questions"), 5),
-        "required_concepts": _clean_concepts(data.get("required_concepts")),
+        "key_questions": questions,
+        "required_concepts": concepts,
     }
-
 
 def expand_research_queries(
     topic: str,
@@ -267,6 +422,116 @@ def _normalize_words(text: str) -> list[str]:
     return normalized
 
 
+def _physics_source_is_relevant(
+    topic: str,
+    title: str,
+    summary: str,
+) -> bool:
+    """Conservatively match sources to the physics concepts requested."""
+    topic_lower = " ".join(topic.casefold().split())
+    title_lower = " ".join(title.casefold().split())
+    summary_lower = summary.casefold()
+    combined = f"{title_lower} {summary_lower}"
+
+    requested = {
+        "newton": "newton" in topic_lower,
+        "kinematics": "kinematics" in topic_lower,
+        "free_fall": "free fall" in topic_lower,
+        "projectile": "projectile motion" in topic_lower,
+        "potential_energy": "potential energy" in topic_lower,
+    }
+
+    if not any(requested.values()):
+        return False
+
+    # Reject obvious namesakes and robotics-specific kinematics pages.
+    if any(
+        marker in title_lower
+        for marker in ("disambiguation", "(film)", "(movie)")
+    ):
+        return False
+
+    if "robot" in combined:
+        return False
+
+    matches = []
+
+    if requested["newton"]:
+        law_title = (
+            "newton's second law" in title_lower
+            or "newton's laws of motion" in title_lower
+        )
+        evidence = all(
+            term in summary_lower
+            for term in ("force", "mass", "acceleration")
+        )
+        matches.append(law_title and evidence)
+
+    if requested["kinematics"]:
+        title_matches = "kinematics" in title_lower
+        evidence_count = sum(
+            term in summary_lower
+            for term in (
+                "motion",
+                "position",
+                "displacement",
+                "velocity",
+                "acceleration",
+            )
+        )
+        matches.append(title_matches and evidence_count >= 2)
+
+    if requested["free_fall"]:
+        title_matches = (
+            "free fall" in title_lower
+            or "falling object" in title_lower
+        )
+        evidence = (
+            "gravity" in summary_lower
+            and (
+                "falling" in summary_lower
+                or "free fall" in summary_lower
+            )
+        )
+        matches.append(title_matches and evidence)
+
+    if requested["projectile"]:
+        title_matches = "projectile motion" in title_lower
+        evidence = (
+            "projectile" in summary_lower
+            and any(
+                term in summary_lower
+                for term in (
+                    "trajectory",
+                    "gravity",
+                    "horizontal",
+                    "vertical",
+                    "launch angle",
+                )
+            )
+        )
+        matches.append(title_matches and evidence)
+
+    if requested["potential_energy"]:
+        title_matches = (
+            "potential energy" in title_lower
+            or "gravitational energy" in title_lower
+        )
+        evidence_count = sum(
+            term in summary_lower
+            for term in (
+                "gravity",
+                "gravitational",
+                "height",
+                "mass",
+                "position",
+            )
+        )
+        matches.append(title_matches and evidence_count >= 2)
+
+    return any(matches)
+
+
 def is_relevant_source(topic: str, title: str, summary: str) -> bool:
     """Conservative keyword fallback for research-source relevance.
 
@@ -284,6 +549,18 @@ def is_relevant_source(topic: str, title: str, summary: str) -> bool:
 
     if not topic_words or not title_words:
         return False
+
+    # For physics lessons, use concept-specific matching instead of the
+    # generic title-overlap rules below.
+    physics_markers = (
+        "newton",
+        "kinematics",
+        "free fall",
+        "projectile motion",
+        "potential energy",
+    )
+    if any(marker in normalized_topic for marker in physics_markers):
+        return _physics_source_is_relevant(topic, title, summary)
 
     # Reject obvious meanings that conflict with the requested topic.
     if "vaccine" in topic_words and any(
@@ -387,6 +664,49 @@ def is_relevant_source(topic: str, title: str, summary: str) -> bool:
 
     if any(supporting_concepts):
         return True
+
+    # Multi-concept physics lessons may rely on separate articles.
+    # Require a concept-specific title and supporting evidence in the summary.
+    physics_topic = " ".join(topic.lower().split())
+
+    physics_evidence = {
+        "newton": (
+            ("newton", "law of motion", "net force"),
+            ("force", "mass", "acceleration"),
+        ),
+        "kinematics": (
+            ("kinematics",),
+            ("velocity", "displacement", "acceleration", "position"),
+        ),
+        "free fall": (
+            ("free fall", "falling object"),
+            ("gravity", "gravitational acceleration", "falling"),
+        ),
+        "projectile": (
+            ("projectile",),
+            ("trajectory", "launch angle", "parabolic", "projectile"),
+        ),
+        "potential energy": (
+            ("potential energy", "gravitational potential"),
+            ("height", "mass", "gravity", "energy"),
+        ),
+    }
+
+    for concept, (title_markers, evidence_markers) in physics_evidence.items():
+        if concept not in physics_topic:
+            continue
+
+        title_matches = any(
+            marker in title_lower for marker in title_markers
+        )
+        # The title identifies the concept; the summary must supply
+        # evidence connecting the article to that concept.
+        evidence_matches = sum(
+            marker in summary_lower for marker in evidence_markers
+        )
+
+        if title_matches and evidence_matches >= 1:
+            return True
 
     matched_words = topic_words & content_words
     required_matches = max(1, (len(topic_words) * 2 + 2) // 3)
@@ -670,7 +990,46 @@ def evaluate_sources(
     judged = gemini_relevance_filter(topic, deduped, key_questions)
     if judged is not None:
         selected, covered = judged
-        return deduplicate_valid_sources(selected), covered
+
+        # Apply the same final relevance gate to Gemini-selected sources.
+        filtered = [
+            item
+            for item in selected
+            if is_relevant_source(
+                topic,
+                item.get("title", ""),
+                item.get("summary", ""),
+            )
+        ]
+
+        # If filtering removed sources, Gemini's previous coverage assessment
+        # may no longer describe the retained evidence.
+        if len(filtered) != len(selected):
+            covered = None
+
+        # Recover relevant candidates that Gemini did not select.
+        # This prevents multi-concept topics from losing relevant evidence
+        # simply because the judge returned only a subset of candidates.
+        relevant_candidates = [
+            item
+            for item in deduped
+            if is_relevant_source(
+                topic,
+                item.get("title", ""),
+                item.get("summary", ""),
+            )
+        ]
+
+        supplemented = deduplicate_valid_sources(
+            [*filtered, *relevant_candidates]
+        )
+
+        # The original coverage assessment may no longer describe the
+        # supplemented source set.
+        if len(supplemented) > len(filtered):
+            covered = None
+
+        return supplemented, covered
 
     baseline = [
         item
@@ -791,10 +1150,390 @@ def research_node(state: VideoState) -> dict:
             "Check your internet connection and try again."
         ) from exc
 
+def tavily_research_node(state: VideoState) -> dict:
+    """Attempt one bounded Tavily search to fill a research evidence gap."""
+    if state.get("tavily_used", False):
+        return {"tavily_used": True}
+
+    # Mark the attempt before any operation so later graph routes cannot
+    # repeat the search if Tavily fails or its key is unavailable.
+    result = {"tavily_used": True}
+    api_key = os.getenv("TAVILY_API_KEY")
+
+    if not api_key:
+        result["critique"] = (
+            f"{state.get('critique', '')} "
+            "Tavily fallback was unavailable because TAVILY_API_KEY "
+            "is not configured."
+        ).strip()
+        return result
+
+    topic = state.get("topic", "").strip()
+    gaps = state.get("research_gaps") or []
+
+    # Keep the query short. Do not submit the entire script.
+    query = topic
+    if gaps:
+        first_gap = " ".join(str(gaps[0]).split())[:160]
+        if first_gap:
+            query = f"{topic} {first_gap}"
+
+    try:
+        response = requests.post(
+            "https://api.tavily.com/search",
+            json={
+                "api_key": api_key,
+                "query": query,
+                "search_depth": "basic",
+                "max_results": 5,
+                "include_answer": False,
+            },
+            timeout=15,
+        )
+        response.raise_for_status()
+        payload = response.json()
+
+        if not isinstance(payload, dict):
+            raise ValueError("Unexpected Tavily response format.")
+
+        results = payload.get("results", [])
+        if not isinstance(results, list):
+            results = []
+
+        tavily_sources = []
+        for item in results:
+            if not isinstance(item, dict):
+                continue
+
+            title = item.get("title")
+            url = item.get("url")
+            summary = item.get("content") or item.get("raw_content")
+
+            if not all(
+                isinstance(value, str) and value.strip()
+                for value in (title, url, summary)
+            ):
+                continue
+
+            if not is_relevant_source(topic, title, summary):
+                continue
+
+            tavily_sources.append({
+                "title": title.strip(),
+                "url": url.strip(),
+                "summary": clean_research_text(summary),
+            })
+
+        # Preserve Wikipedia sources and remove duplicate or malformed
+        # results using the existing source validation helper.
+        combined = deduplicate_valid_sources([
+            *state.get("research_sources", []),
+            *tavily_sources,
+        ])
+
+        if not combined:
+            result["critique"] = (
+                f"{state.get('critique', '')} "
+                "Tavily did not provide any additional usable research "
+                "sources."
+            ).strip()
+            return result
+
+        result.update({
+            "research_sources": combined,
+            "research_notes": [
+                f"{source['title']}: {source['summary']}"
+                for source in combined
+            ],
+            "research_quality": classify_research_quality(len(combined)),
+        })
+
+        return result
+
+    except (requests.RequestException, ValueError, TypeError) as exc:
+        # A failed fallback should not crash the workflow. Keep the
+        # existing evidence and allow the graph to decide what happens next.
+        result["critique"] = (
+            f"{state.get('critique', '')} "
+            f"Tavily fallback failed ({type(exc).__name__}); "
+            "the existing research was retained."
+        ).strip()
+        return result
 
 # ---------------------------------------------------------------------------
 # Script writing
 # ---------------------------------------------------------------------------
+
+def _multi_concept_physics_script(
+    topic: str,
+    evidence: list[str],
+    required_concepts: list[dict],
+) -> str | None:
+    """Build a concise, ordered physics lesson from relevant evidence."""
+    sections = (
+        (
+            "Newton's second law",
+            ("net force", "mass", "acceleration", "second law"),
+            "Forces come first.",
+        ),
+        (
+            "Kinematics",
+            ("kinematics", "position", "displacement", "velocity", "motion"),
+            "Next, describe motion.",
+        ),
+        (
+            "Free fall",
+            ("free fall", "gravity", "acceleration", "air resistance"),
+            "In free fall, gravity acts alone.",
+        ),
+        (
+            "Projectile motion",
+            (
+                "projectile motion", "trajectory", "launch angle",
+                "horizontal", "vertical", "initial velocity", "parabolic",
+            ),
+            "For launches, separate horizontal and vertical motion.",
+        ),
+        (
+            "Gravitational potential energy",
+            (
+                "gravitational potential energy", "potential energy",
+                "mgh", "mass", "height", "gravity", "stored energy",
+            ),
+            "Finally, consider gravitational potential energy.",
+        ),
+    )
+
+    requested = {
+        str(item.get("concept", "")).casefold()
+        for item in required_concepts
+        if isinstance(item, dict)
+    }
+    topic_lower = topic.casefold()
+    topic_aliases = {
+        "newton's second law": ("newton's second law", "newton second law"),
+        "kinematics": ("kinematics",),
+        "free fall": ("free fall",),
+        "projectile motion": ("projectile motion",),
+        "gravitational potential energy": (
+            "gravitational potential energy", "potential energy",
+        ),
+    }
+
+    print(f"[physics-debug] requested={sorted(requested)}")
+    if not all(
+        name.casefold() in requested
+        or any(alias in topic_lower for alias in topic_aliases[name.casefold()])
+        for name, _, _ in sections
+    ):
+        print("[physics-debug] builder rejected this lesson")
+        return None
+
+    selected = []
+    used = set()
+
+    for name, markers, _ in sections:
+        candidates = []
+
+        for sentence in evidence:
+            normalized = sentence.casefold()
+            count = len(sentence.split())
+
+            if normalized in used or not 4 <= count <= 40:
+                continue
+
+            score = sum(marker in normalized for marker in markers)
+
+            # Prefer the direct definition, not merely related vocabulary.
+            if name == "Newton's second law":
+                if "net force" in normalized:
+                    score += 3
+            elif name == "Kinematics":
+                if "in physics" in normalized:
+                    score += 2
+                if any(term in normalized for term in (
+                    "in geometry", "angular measure", "kinematic chain",
+                    "end-effector", "robot manipulator",
+                )):
+                    score -= 5
+            elif name == "Free fall":
+                if "free fall" in normalized:
+                    score += 2
+            elif name == "Projectile motion":
+                if "projectile motion" in normalized:
+                    score += 2
+                if "trajectory" in normalized:
+                    score += 2
+                if "horizontal" in normalized and "vertical" in normalized:
+                    score += 1
+            elif name == "Gravitational potential energy":
+                if "gravitational potential energy" in normalized:
+                    score += 3
+                elif "potential energy" in normalized:
+                    score += 2
+                # Prefer an equation when the retrieved evidence contains it.
+                if "mgh" in normalized:
+                    score += 6
+
+            if score > 0:
+                candidates.append((score, -count, sentence))
+
+        if not candidates:
+            print("[physics-debug] builder rejected this lesson")
+            return None
+
+        _, _, sentence = max(candidates, key=lambda item: (item[0], item[1]))
+
+        # Prefer explaining the variables alongside the equation when both
+        # are present in the retrieved evidence. Never invent the equation.
+        if name == "Gravitational potential energy":
+            if "mgh" in sentence.casefold():
+                supporting_sentence = next(
+                    (
+                        item for item in evidence
+                        if item.casefold() not in used
+                        and item.casefold() != sentence.casefold()
+                        and "mass" in item.casefold()
+                        and "height" in item.casefold()
+                        and any(
+                            term in item.casefold()
+                            for term in ("gravity", "gravitational")
+                        )
+                    ),
+                    None,
+                )
+                if supporting_sentence:
+                    used.add(supporting_sentence.casefold())
+                    sentence = f"{supporting_sentence} {sentence}"
+            else:
+                formula_sentence = next(
+                    (
+                        item for item in evidence
+                        if item.casefold() not in used
+                        and item.casefold() != sentence.casefold()
+                        and "mgh" in item.casefold()
+                    ),
+                    None,
+                )
+                if formula_sentence:
+                    used.add(formula_sentence.casefold())
+                    sentence = f"{sentence} {formula_sentence}"
+
+        used.add(sentence.casefold())
+        selected.append(sentence)
+
+    parts = [
+        "Imagine five connected ideas that explain forces, motion, and energy."
+    ]
+
+    for (_, _, introduction), sentence in zip(sections, selected):
+        parts.extend((introduction, sentence))
+
+    parts.append("Together, these ideas connect forces, motion, and energy.")
+
+    script = re.sub(r"\s+", " ", " ".join(parts)).strip()
+
+    if not 80 <= len(script.split()) <= 180:
+        print("[physics-debug] builder rejected this lesson")
+        return None
+
+    return script
+
+def _binary_search_fallback_script(
+    topic: str,
+    evidence: list[str],
+) -> str | None:
+    """Build a binary-search lesson only from topic-specific evidence."""
+    if not re.search(r"\bbinary\s+search\b", topic, re.IGNORECASE):
+        return None
+
+    sentences = [
+        sentence.strip()
+        for item in evidence
+        for sentence in re.split(r"(?<=[.!?])\s+", item)
+        if sentence.strip()
+    ]
+
+    # Optimal binary search trees are a separate topic. Do not import
+    # their details into a basic binary-search explainer.
+    sentences = [
+        sentence for sentence in sentences
+        if not re.search(
+            r"\b(optimal\s+binary\s+search\s+trees?|optimal\s+bst)\b",
+            sentence,
+            re.IGNORECASE,
+        )
+    ]
+
+    definition = next(
+        (
+            sentence for sentence in sentences
+            if re.search(r"\bbinary search\b", sentence, re.IGNORECASE)
+            and re.search(r"\bsorted\b", sentence, re.IGNORECASE)
+            and re.search(r"\b(array|list|sequence)\b", sentence, re.IGNORECASE)
+        ),
+        None,
+    )
+
+    comparison = next(
+        (
+            sentence for sentence in sentences
+            if "middle element" in sentence.casefold()
+            and "target" in sentence.casefold()
+        ),
+        None,
+    )
+
+    elimination = next(
+        (
+            sentence for sentence in sentences
+            if "half" in sentence.casefold()
+            and "target" in sentence.casefold()
+            and any(
+                term in sentence.casefold()
+                for term in ("eliminated", "cannot lie", "remaining half")
+            )
+        ),
+        None,
+    )
+
+    stopping = next(
+        (
+            sentence for sentence in sentences
+            if "empty" in sentence.casefold()
+            and "target" in sentence.casefold()
+            and any(
+                term in sentence.casefold()
+                for term in ("not in", "not found", "absent")
+            )
+        ),
+        None,
+    )
+
+    # Missing core evidence should not silently produce a generic script.
+    if not all((definition, comparison, elimination, stopping)):
+        return None
+
+    parts = [
+        "Imagine searching a sorted list for one target value.",
+        definition,
+        comparison,
+        elimination,
+        stopping,
+        (
+            "The process has two outcomes: the target is found, or the "
+            "remaining candidates become empty."
+        ),
+    ]
+
+    script = re.sub(r"\s+", " ", " ".join(parts)).strip()
+    word_count = len(script.split())
+
+    if not 80 <= word_count <= 180:
+        return None
+
+    return script
+
 
 def scriptwriter_node(state: VideoState) -> dict:
     """Create a deterministic, evidence-grounded fallback script."""
@@ -831,6 +1570,49 @@ def scriptwriter_node(state: VideoState) -> dict:
     if not evidence:
         raise RuntimeError(
             "The available research sources contain no usable summaries."
+        )
+
+    category = state.get("category")
+
+    # An explicit category is authoritative. For older direct callers that
+    # omit it, infer Physics only from unmistakable Physics topic markers.
+    physics_markers = (
+        "newton's second law",
+        "newton second law",
+        "physics fundamentals",
+        "kinematics",
+        "free fall",
+        "projectile motion",
+        "gravitational potential energy",
+    )
+    is_physics = category == "physics" or (
+        category is None
+        and any(marker in topic.casefold() for marker in physics_markers)
+    )
+
+    if is_physics:
+        physics_script = _multi_concept_physics_script(
+            topic,
+            evidence,
+            state.get("required_concepts") or [],
+        )
+        if physics_script:
+            return {"script": physics_script}
+
+    is_binary_search = bool(
+        re.search(r"\bbinary\s+search\b", topic, re.IGNORECASE)
+    )
+    is_cs_topic = category == "cs" or (category is None and is_binary_search)
+
+    if is_cs_topic and is_binary_search:
+        binary_script = _binary_search_fallback_script(topic, evidence)
+        if binary_script:
+            return {"script": binary_script}
+
+        raise RuntimeError(
+            "The fallback writer could not find sufficient binary-search "
+            "evidence for a focused script. Add relevant research rather "
+            "than using a generic fallback."
         )
 
     topic_label = re.sub(
@@ -1088,17 +1870,21 @@ def critic_node(state: VideoState) -> dict:
     topic = state["topic"].strip()
     words = script.split()
     issues = []
+    critic_categories = []
+    research_gaps = []
 
     if not script.startswith("Imagine"):
         issues.append(
             "Start with a curiosity-driven hook beginning with 'Imagine'."
         )
+        critic_categories.append("structure")
 
     if not 80 <= len(words) <= 180:
         issues.append(
             f"The script must contain 80-180 words; it currently has "
             f"{len(words)}."
         )
+        critic_categories.append("structure")
 
     sources = state.get("research_sources", [])
     research_quality = state.get("research_quality", "unknown")
@@ -1110,6 +1896,11 @@ def critic_node(state: VideoState) -> dict:
             "sources are available. Additional research is required "
             "before this script can be approved."
         )
+        critic_categories.append("research_gap")
+        research_gaps.append(
+            "Research coverage is insufficient: fewer than two relevant "
+            "sources are available."
+        )
     elif research_quality == "limited":
         research_warning = (
             "Research coverage is limited; verify key claims against "
@@ -1120,11 +1911,18 @@ def critic_node(state: VideoState) -> dict:
         issues.append(
             "At least one research source is required before approval."
         )
+        if "research_gap" not in critic_categories:
+            critic_categories.append("research_gap")
+        research_gaps.append(
+            "No research sources are available to support the script."
+        )
 
     if len(words) < 10:
         issues.append(
             "The script needs enough meaningful content to explain the topic."
         )
+        if "structure" not in critic_categories:
+            critic_categories.append("structure")
 
     lower_script = script.lower()
     disclaimer_phrases = (
@@ -1139,6 +1937,7 @@ def critic_node(state: VideoState) -> dict:
             "Replace research disclaimers with a substantive explanation "
             "of the topic."
         )
+        critic_categories.append("style")
 
     stopwords = {
         "about", "after", "again", "also", "and", "are", "because",
@@ -1174,6 +1973,7 @@ def critic_node(state: VideoState) -> dict:
         issues.append(
             "The script does not clearly cover the requested topic."
         )
+        critic_categories.append("topic_coverage")
 
     # Per-video learning objectives come from the research plan, not from
     # topic-specific branches. A concept counts as covered when any of its
@@ -1183,7 +1983,10 @@ def critic_node(state: VideoState) -> dict:
         missing_concepts = [
             item["concept"]
             for item in required_concepts
-            if not any(keyword in lower_script for keyword in item["keywords"])
+            if not any(
+                keyword in lower_script
+                for keyword in item["keywords"]
+            )
         ]
         covered_count = len(required_concepts) - len(missing_concepts)
         needed = math.ceil(len(required_concepts) * MIN_CONCEPT_COVERAGE)
@@ -1193,6 +1996,15 @@ def critic_node(state: VideoState) -> dict:
                 "The script does not yet explain these planned concepts: "
                 + "; ".join(missing_concepts)
                 + ". Cover them only where the sources support them."
+            )
+            critic_categories.append("concept_coverage")
+
+            # Record concept gaps separately. They may need better writing,
+            # more research, or both; they do not automatically prove that
+            # additional web research is necessary.
+            research_gaps.extend(
+                f"Planned concept needs coverage: {concept}"
+                for concept in missing_concepts
             )
 
     sentences = [
@@ -1266,6 +2078,9 @@ def critic_node(state: VideoState) -> dict:
         )
 
     if unsupported:
+        critic_categories.append("unsupported_claims")
+        research_gaps.extend(unsupported[:5])
+
         examples = " ".join(unsupported[:2])
         issues.append(
             f"{len(unsupported)} substantive sentence(s) have limited "
@@ -1274,15 +2089,24 @@ def critic_node(state: VideoState) -> dict:
             f"approval. Example: {examples}"
         )
 
+    # Keep category names unique while preserving their original order.
+    critic_categories = list(dict.fromkeys(critic_categories))
+
+    # Remove duplicate gap messages without changing their order.
+    research_gaps = list(dict.fromkeys(research_gaps))
+
     if issues:
         critique = " ".join(issues)
         if research_warning:
             critique = f"{critique} {research_warning}"
         if evidence_warning:
             critique = f"{critique} {evidence_warning}"
+
         return {
             "critique": critique,
             "approved": False,
+            "critic_categories": critic_categories,
+            "research_gaps": research_gaps,
         }
 
     critique = (
@@ -1304,7 +2128,10 @@ def critic_node(state: VideoState) -> dict:
     return {
         "critique": critique,
         "approved": True,
+        "critic_categories": critic_categories,
+        "research_gaps": research_gaps,
     }
+
 def gemini_critic_node(state: VideoState) -> dict:
     """Add an evidence-focused Gemini review to the deterministic critic.
 
@@ -1408,11 +2235,27 @@ the relevant claims.
             "supplied research summaries."
         )
 
+        # Signal the workflow that this rejection may need more evidence.
+        # Preserve any categories and gaps reported by the deterministic critic.
+        existing_categories = baseline.get("critic_categories", [])
+        existing_gaps = baseline.get("research_gaps", [])
+
         return {
             "approved": False,
             "critique": (
                 f"{baseline.get('critique', '')} {feedback}"
             ).strip(),
+            "critic_categories": list(dict.fromkeys([
+                *existing_categories,
+                "unsupported_claims",
+            ])),
+            "research_gaps": list(dict.fromkeys([
+                *existing_gaps,
+                *issues,
+            ])) or [
+                "Gemini flagged potentially unsupported claims, "
+                "but did not identify specific claims to investigate."
+            ],
         }
 
     return {

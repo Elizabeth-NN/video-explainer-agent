@@ -19,6 +19,7 @@ class Scene(TypedDict):
 
 class VideoState(TypedDict):
     topic: str
+    category: NotRequired[Literal["cs", "physics"]]
     research_notes: list[str]
     research_sources: list[ResearchSource]
     research_quality: Literal["insufficient", "limited", "adequate"]
@@ -27,3 +28,6 @@ class VideoState(TypedDict):
     approved: bool
     revision_count: int
     scenes: list[Scene]
+    critic_categories: NotRequired[list[str]]
+    research_gaps: NotRequired[list[str]]
+    tavily_used: NotRequired[bool]

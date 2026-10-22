@@ -1,13 +1,17 @@
 
-from unittest.mock import patch
+import pytest
+from unittest.mock import MagicMock, patch
 
 from app.graph.nodes import (
     clean_research_text,
+    evaluate_sources,
     critic_node,
+    gemini_critic_node,
     gemini_relevance_filter,
     is_relevant_source,
     research_node,
     revise_script_node,
+    tavily_research_node,
 )
 from app.graph.workflow import build_graph
 
@@ -118,7 +122,7 @@ def test_graph_revises_and_approves_script():
         "app.graph.workflow.research_node",
         return_value=fake_research,
     ):
-        graph = build_graph()
+        graph = build_graph(use_gemini_planner=False)
         state = initial_state("How does solar energy work?")
         result = graph.invoke(state)
 
@@ -430,6 +434,43 @@ def test_critic_approves_script_meeting_basic_checks():
     )
     assert "Research coverage is limited" in result["critique"]
 
+def test_gemini_critic_rejection_requests_additional_evidence():
+    state = initial_state(topic="How a process works")
+    state["script"] = (
+        "Imagine learning how a process works. "
+        + "This explanation describes the main steps and ideas. " * 12
+    )
+    source = {
+        "title": "Process explanation",
+        "url": "https://example.com/research",
+        "summary": (
+            "This explanation describes the main steps and ideas. "
+            "Learning how a process works involves understanding "
+            "the steps and ideas."
+        ),
+    }
+    state["research_sources"] = [source, source.copy()]
+    state["research_quality"] = "limited"
+
+    issue = (
+        "The script claims the process doubles output, "
+        "but the supplied summaries do not support that claim."
+    )
+
+    with patch(
+        "app.graph.nodes._gemini_json",
+        return_value={
+            "supported": False,
+            "issues": [issue],
+            "summary": "One claim lacks supporting evidence.",
+        },
+    ):
+        result = gemini_critic_node(state)
+
+    assert result["approved"] is False
+    assert "unsupported_claims" in result["critic_categories"]
+    assert issue in result["research_gaps"]
+    assert issue in result["critique"]
 
 def test_critic_flags_creative_opening_hook_with_limited_overlap():
     state = initial_state(
@@ -907,6 +948,15 @@ def test_graph_stops_when_research_is_insufficient():
                 "The graph must not revise with insufficient research."
             ),
         ),
+        patch(
+            "app.graph.workflow.tavily_research_node",
+            side_effect=lambda state: {
+                "tavily_used": True,
+                "research_quality": "insufficient",
+                "research_sources": state.get("research_sources", []),
+                "research_notes": state.get("research_notes", []),
+            },
+        ),
     ):
         result = build_graph().invoke(
             initial_state("How a process works")
@@ -916,6 +966,107 @@ def test_graph_stops_when_research_is_insufficient():
     assert result["revision_count"] == 0
     assert "Research coverage is insufficient" in result["critique"]
 
+def test_gemini_evidence_gap_triggers_tavily_once_in_graph():
+    from app.graph.workflow import build_graph
+
+    script = (
+        "Imagine learning how a process works. "
+        + "This explanation describes the main steps and ideas. " * 12
+    )
+
+    research_sources = [
+        {
+            "title": "Process overview",
+            "url": "https://example.com/process",
+            "summary": "An overview of the process and its main steps.",
+        },
+        {
+            "title": "Process details",
+            "url": "https://example.com/details",
+            "summary": "Additional information about the process.",
+        },
+    ]
+
+    critic_calls = []
+    tavily_calls = []
+
+    def fake_writer(state):
+        return {"script": script}
+
+    def fake_critic(state):
+        critic_calls.append(state.get("tavily_used", False))
+
+        if len(critic_calls) == 1:
+            return {
+                "approved": False,
+                "critique": "A claim needs additional evidence.",
+                "critic_categories": ["unsupported_claims"],
+                "research_gaps": ["Evidence for the additional claim is missing."],
+            }
+
+        return {
+            "approved": True,
+            "critique": "The revised evidence review passed.",
+            "critic_categories": [],
+            "research_gaps": [],
+        }
+
+    def fake_tavily(state):
+        tavily_calls.append(True)
+        return {
+            "tavily_used": True,
+            "research_quality": "adequate",
+            "research_sources": [
+                *state["research_sources"],
+                {
+                    "title": "Additional evidence",
+                    "url": "https://example.com/additional",
+                    "summary": "Additional evidence about the process.",
+                },
+            ],
+            "research_notes": [
+                *state.get("research_notes", []),
+                "Additional evidence was retrieved.",
+            ],
+        }
+
+    with (
+        patch(
+            "app.graph.workflow.research_node",
+            return_value={
+                "research_quality": "adequate",
+                "research_sources": research_sources,
+                "research_notes": ["Initial process research."],
+            },
+        ),
+        patch(
+            "app.graph.workflow.gemini_scriptwriter_node",
+            side_effect=fake_writer,
+        ),
+        patch(
+            "app.graph.workflow.gemini_critic_node",
+            side_effect=fake_critic,
+        ),
+        patch(
+            "app.graph.workflow.tavily_research_node",
+            side_effect=fake_tavily,
+        ),
+        patch(
+            "app.graph.workflow.scene_planner_node",
+            return_value={},
+        ),
+    ):
+        result = build_graph(use_llm=True).invoke(
+            initial_state("How a process works")
+        )
+
+    assert len(tavily_calls) == 1
+    assert len(critic_calls) == 2
+    assert critic_calls[0] is False
+    assert critic_calls[1] is True
+    assert result["tavily_used"] is True
+    assert result["approved"] is True
+    assert len(result["research_sources"]) == 3
 
 def test_graph_approves_script_with_adequate_research():
     fake_research = {
@@ -958,7 +1109,7 @@ def test_graph_approves_script_with_adequate_research():
         "app.graph.workflow.research_node",
         return_value=fake_research,
     ):
-        result = build_graph().invoke(
+        result = build_graph(use_gemini_planner=False).invoke(
             initial_state("How a process works")
         )
 
@@ -1004,8 +1155,46 @@ def test_critic_rejects_insufficient_research_without_revision_loop():
     assert "Research coverage is insufficient" in result["critique"]
 
     routed_state = {**state, **result}
-    assert route_after_critique(routed_state) == "insufficient_research"
+    assert route_after_critique(routed_state) == "tavily"
     assert routed_state["revision_count"] == 0
+
+def test_gemini_evidence_gap_routes_to_tavily_once():
+    from app.graph.workflow import route_after_critique
+
+    state = initial_state(topic="How a process works")
+    state.update({
+        "approved": False,
+        "critic_categories": ["unsupported_claims"],
+        "research_quality": "adequate",
+        "research_sources": [
+            {"title": "Source A", "url": "https://example.com/a", "summary": "Evidence A"},
+            {"title": "Source B", "url": "https://example.com/b", "summary": "Evidence B"},
+        ],
+        "revision_count": 0,
+        "tavily_used": False,
+    })
+
+    assert route_after_critique(state) == "tavily"
+
+
+def test_gemini_evidence_gap_does_not_repeat_tavily():
+    from app.graph.workflow import route_after_critique
+
+    state = initial_state(topic="How a process works")
+    state.update({
+        "approved": False,
+        "critic_categories": ["unsupported_claims"],
+        "research_quality": "adequate",
+        "research_sources": [
+            {"title": "Source A", "url": "https://example.com/a", "summary": "Evidence A"},
+            {"title": "Source B", "url": "https://example.com/b", "summary": "Evidence B"},
+        ],
+        "revision_count": 0,
+        "tavily_used": True,
+    })
+
+    assert route_after_critique(state) == "revise"
+
 
 
 def test_critic_approves_limited_research_with_warning():
@@ -1214,7 +1403,7 @@ def test_llm_workflow_uses_selected_writer_for_revision():
             ],
         ),
     ):
-        result = build_graph(use_llm=True).invoke(state)
+        result = build_graph(use_llm=True, use_gemini_planner=False).invoke(state)
 
     assert gemini_writer.call_count == 2
     assert (
@@ -1336,3 +1525,650 @@ def test_clean_research_text_repairs_database_spacing():
     assert "the speed" in result
     assert "storage space" in result
     assert "and search" in result
+
+def test_tavily_fallback_merges_relevant_sources(monkeypatch):
+    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+
+    response = MagicMock()
+    response.json.return_value = {
+        "results": [
+            {
+                "title": "Vaccine immune response",
+                "url": "https://example.com/vaccine-response",
+                "content": (
+                    "Vaccines train the immune system to recognize "
+                    "pathogens and develop protective immunity."
+                ),
+            }
+        ]
+    }
+
+    state = {
+        "topic": "How vaccines work",
+        "research_notes": ["Existing research note"],
+        "research_sources": [
+            {
+                "title": "Vaccine",
+                "url": "https://example.com/vaccine",
+                "summary": (
+                    "Vaccines stimulate the immune system to "
+                    "recognize pathogens."
+                ),
+            },
+            {
+                "title": "Immune system",
+                "url": "https://example.com/immune-system",
+                "summary": (
+                    "The immune system recognizes pathogens "
+                    "and helps protect the body."
+                ),
+            },
+        ],
+        "research_quality": "limited",
+        "critique": "",
+        "research_gaps": [],
+    }
+
+    with patch(
+        "app.graph.nodes.requests.post",
+        return_value=response,
+    ) as mock_post:
+        result = tavily_research_node(state)
+
+    response.raise_for_status.assert_called_once()
+    mock_post.assert_called_once()
+
+    assert mock_post.call_args.args[0] == (
+        "https://api.tavily.com/search"
+    )
+    assert mock_post.call_args.kwargs["timeout"] == 15
+    assert (
+        mock_post.call_args.kwargs["json"]["api_key"]
+        == "test-key"
+    )
+    assert result["tavily_used"] is True
+    assert len(result["research_sources"]) == 3
+    assert result["research_quality"] == "adequate"
+    assert any(
+        source["title"] == "Vaccine immune response"
+        for source in result["research_sources"]
+    )
+
+
+def test_tavily_fallback_handles_missing_api_key(monkeypatch):
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+
+    state = {
+        "topic": "How vaccines work",
+        "research_notes": ["Existing note"],
+        "research_sources": [],
+        "research_quality": "insufficient",
+        "critique": "",
+    }
+
+    with patch("app.graph.nodes.requests.post") as mock_post:
+        result = tavily_research_node(state)
+
+    mock_post.assert_not_called()
+    assert result["tavily_used"] is True
+    assert "TAVILY_API_KEY" in result["critique"]
+    assert "research_sources" not in result
+
+
+def test_tavily_fallback_handles_network_failure(monkeypatch):
+    import requests
+
+    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+
+    state = {
+        "topic": "How vaccines work",
+        "research_notes": ["Existing note"],
+        "research_sources": [],
+        "research_quality": "insufficient",
+        "critique": "",
+    }
+
+    with patch(
+        "app.graph.nodes.requests.post",
+        side_effect=requests.RequestException("test failure"),
+    ) as mock_post:
+        result = tavily_research_node(state)
+
+    mock_post.assert_called_once()
+    assert result["tavily_used"] is True
+    assert "Tavily fallback failed" in result["critique"]
+    assert "research_sources" not in result
+
+
+def test_tavily_fallback_does_not_repeat_search(monkeypatch):
+    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+
+    state = {
+        "topic": "How vaccines work",
+        "research_notes": [],
+        "research_sources": [],
+        "research_quality": "insufficient",
+        "critique": "",
+        "tavily_used": True,
+    }
+
+    with patch("app.graph.nodes.requests.post") as mock_post:
+        result = tavily_research_node(state)
+
+    mock_post.assert_not_called()
+    assert result == {"tavily_used": True}
+
+
+def test_physics_research_fallback_plans_requested_concepts(monkeypatch):
+    from app.graph.nodes import plan_research
+
+    monkeypatch.setattr(
+        "app.graph.nodes._gemini_json",
+        lambda *args, **kwargs: None,
+    )
+
+    plan = plan_research(
+        "Physics fundamentals: Newton's second law, kinematics, "
+        "free fall, projectile motion, and potential energy"
+    )
+
+    concepts = {item["concept"] for item in plan["required_concepts"]}
+    queries = {query.casefold() for query in plan["search_queries"]}
+
+    assert concepts == {
+        "Newton's second law",
+        "Kinematics",
+        "Free fall",
+        "Projectile motion",
+        "Gravitational potential energy",
+    }
+    assert len(plan["key_questions"]) == 5
+    assert "kinematics" in queries
+    assert "free fall" in queries
+    assert "projectile motion" in queries
+    assert any(
+        "gravitational potential energy" in query and "mgh" in query
+        for query in queries
+    )
+    assert any("mgh" in query for query in queries)
+
+
+def test_physics_plan_preserves_concept_searches_when_gemini_returns_generic_plan(
+    monkeypatch,
+):
+    from app.graph.nodes import plan_research
+
+    monkeypatch.setattr(
+        "app.graph.nodes._gemini_json",
+        lambda *args, **kwargs: {
+            "search_queries": ["Physics", "Motion"],
+            "key_questions": ["What is physics?"],
+            "required_concepts": [
+                {"concept": "General physics", "keywords": ["physics", "motion"]}
+            ],
+        },
+    )
+
+    plan = plan_research(
+        "Physics fundamentals: Newton's second law, kinematics, "
+        "free fall, projectile motion, and potential energy"
+    )
+
+    queries = {query.casefold() for query in plan["search_queries"]}
+    concepts = {item["concept"] for item in plan["required_concepts"]}
+
+    assert {
+        "newton's laws of motion",
+        "kinematics",
+        "free fall",
+        "projectile motion",
+    }.issubset(queries)
+    assert any(
+        "gravitational potential energy" in query and "mgh" in query
+        for query in queries
+    )
+
+    assert concepts == {
+        "Newton's second law",
+        "Kinematics",
+        "Free fall",
+        "Projectile motion",
+        "Gravitational potential energy",
+    }
+    assert len(plan["key_questions"]) == 5
+
+
+def test_physics_relevance_requires_summary_evidence_not_just_title():
+    from app.graph.nodes import is_relevant_source
+
+    topic = (
+        "Physics fundamentals: Newton's second law, kinematics, "
+        "free fall, projectile motion, and potential energy"
+    )
+
+    assert not is_relevant_source(
+        topic,
+        "Gravitational potential energy",
+        "This article introduces a subject and its historical background.",
+    )
+
+
+def test_physics_relevance_accepts_concept_specific_articles():
+    from app.graph.nodes import is_relevant_source
+
+    topic = (
+        "Physics fundamentals: Newton's second law, kinematics, "
+        "free fall, projectile motion, and potential energy"
+    )
+
+    assert is_relevant_source(
+        topic,
+        "Free fall",
+        "Free fall describes motion under gravity and gravitational acceleration.",
+    )
+    assert is_relevant_source(
+        topic,
+        "Projectile motion",
+        "A projectile follows a trajectory determined by its launch angle.",
+    )
+    assert is_relevant_source(
+        topic,
+        "Gravitational potential energy",
+        "Potential energy depends on an object's mass, height, and gravity.",
+    )
+
+
+def test_physics_relevance_rejects_unrelated_articles():
+    from app.graph.nodes import is_relevant_source
+
+    topic = (
+        "Physics fundamentals: Newton's second law, kinematics, "
+        "free fall, projectile motion, and potential energy"
+    )
+
+    assert not is_relevant_source(
+        topic,
+        "Physics education",
+        "This article discusses university admissions and teaching policy.",
+    )
+
+def test_multi_concept_physics_fallback_covers_all_requested_concepts():
+    from app.graph.nodes import scriptwriter_node
+
+    state = initial_state(
+        topic=(
+            "Physics fundamentals: Newton's second law, kinematics, "
+            "free fall, projectile motion, and potential energy"
+        )
+    )
+    state["required_concepts"] = [
+        {"concept": "Newton's laws", "keywords": ["newton", "force", "mass", "acceleration"]},
+        {"concept": "Motion", "keywords": ["kinematics", "position", "displacement", "velocity"]},
+        {"concept": "Falling objects", "keywords": ["free fall", "gravity", "falling object"]},
+        {"concept": "Projectile trajectories", "keywords": ["projectile", "trajectory", "launch angle"]},
+        {"concept": "Potential energy", "keywords": ["potential energy", "height", "mgh"]},
+    ]
+    state["research_sources"] = [
+        {
+            "title": "Newton's second law",
+            "url": "https://example.com/newton",
+            "summary": (
+                "Newton's second law states that net force equals mass times acceleration. "
+                "The equation is F equals ma."
+            ),
+        },
+        {
+            "title": "Kinematics",
+            "url": "https://example.com/kinematics",
+            "summary": (
+                "Kinematics describes motion through position, displacement, velocity, and acceleration."
+            ),
+        },
+        {
+            "title": "Free fall",
+            "url": "https://example.com/free-fall",
+            "summary": (
+                "In free fall, gravity causes downward acceleration. "
+                "Air resistance can change an object's motion."
+            ),
+        },
+        {
+            "title": "Projectile motion",
+            "url": "https://example.com/projectile",
+            "summary": (
+                "Projectile motion follows a curved trajectory. "
+                "Launch angle affects the range."
+            ),
+        },
+        {
+            "title": "Gravitational potential energy",
+            "url": "https://example.com/potential-energy",
+            "summary": (
+                "Gravitational potential energy depends on mass, gravity, and height. "
+                "Near Earth's surface, PE equals mgh."
+            ),
+        },
+    ]
+
+    script = scriptwriter_node(state)["script"]
+    lower = script.lower()
+
+    assert script.startswith("Imagine")
+    assert 80 <= len(script.split()) <= 180
+    assert "mgh" in lower
+    assert "mass, gravity, and height" in lower
+    for phrase in (
+        "newton's second law",
+        "kinematics",
+        "free fall",
+        "projectile motion",
+        "gravitational potential energy",
+    ):
+        assert phrase in lower
+
+
+def test_multiconcept_physics_sources_are_supplemented(monkeypatch):
+    topic = (
+        "Physics fundamentals: Newton's second law, kinematics, free fall, "
+        "projectile motion, and potential energy"
+    )
+    candidates = [
+        {
+            "title": "Newton's laws of motion",
+            "url": "https://example.com/newton",
+            "summary": "Newton's second law states that net force equals mass times acceleration.",
+        },
+        {
+            "title": "Kinematics",
+            "url": "https://example.com/kinematics",
+            "summary": "Kinematics describes motion through position, displacement, velocity, and acceleration.",
+        },
+        {
+            "title": "Free fall",
+            "url": "https://example.com/free-fall",
+            "summary": "In free fall, gravity causes downward acceleration. Air resistance can change an object's motion.",
+        },
+        {
+            "title": "Projectile motion",
+            "url": "https://example.com/projectile",
+            "summary": "Projectile motion follows a curved trajectory. Launch angle affects the range.",
+        },
+        {
+            "title": "Gravitational potential energy",
+            "url": "https://example.com/potential-energy",
+            "summary": "Gravitational potential energy depends on mass, gravity, and height. Near Earth's surface, PE equals mgh.",
+        },
+    ]
+
+    selected = [candidates[0], candidates[4]]
+    monkeypatch.setattr(
+        "app.graph.nodes.gemini_relevance_filter",
+        lambda topic, sources, key_questions: (selected, {0}),
+    )
+
+    sources, covered = evaluate_sources(topic, candidates, [])
+
+    titles = {source["title"] for source in sources}
+    assert len(sources) == 5
+    assert "Newton's laws of motion" in titles
+    assert "Kinematics" in titles
+    assert "Free fall" in titles
+    assert "Projectile motion" in titles
+    assert "Gravitational potential energy" in titles
+    assert covered is None
+
+
+def test_wikipedia_get_retries_http_429(monkeypatch):
+    import requests
+    from app.graph.nodes import _wikipedia_get
+
+    class FakeResponse:
+        def __init__(self, status_code, headers=None):
+            self.status_code = status_code
+            self.headers = headers or {}
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise requests.HTTPError(
+                    f"HTTP {self.status_code}"
+                )
+
+    rate_limited = FakeResponse(429, {"Retry-After": "0"})
+    successful = FakeResponse(200)
+    responses = iter([rate_limited, successful])
+    calls = []
+    sleeps = []
+
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs))
+        return next(responses)
+
+    monkeypatch.setattr("app.graph.nodes.requests.get", fake_get)
+    monkeypatch.setattr("app.graph.nodes.time.sleep", sleeps.append)
+
+    result = _wikipedia_get(
+        "https://en.wikipedia.org/w/api.php",
+        params={"action": "query"},
+    )
+
+    assert result is successful
+    assert len(calls) == 2
+    assert sleeps == [0]
+
+def test_gemini_writer_failure_uses_deterministic_writer():
+    from unittest.mock import patch
+
+    from app.graph.workflow import build_graph
+
+    research_result = {
+        "research_quality": "adequate",
+        "research_sources": [
+            {
+                "title": "Vaccine overview",
+                "url": "https://example.com/vaccines",
+                "summary": "Vaccines train the immune system.",
+            },
+            {
+                "title": "Immune response",
+                "url": "https://example.com/immunity",
+                "summary": "The immune system recognizes pathogens.",
+            },
+        ],
+        "research_notes": ["Two supporting sources were retrieved."],
+    }
+
+    with (
+        patch(
+            "app.graph.workflow.research_node",
+            return_value=research_result,
+        ),
+        patch(
+            "app.graph.workflow.gemini_scriptwriter_node",
+            side_effect=RuntimeError("Simulated Gemini outage"),
+        ),
+        patch(
+            "app.graph.workflow.scriptwriter_node",
+            return_value={
+                "script": "Imagine vaccines prepare the immune system."
+            },
+        ) as fallback_writer,
+        patch(
+            "app.graph.workflow.gemini_critic_node",
+            return_value={"approved": True, "critique": "Approved."},
+        ),
+        patch("app.graph.workflow.scene_planner_node", return_value={}),
+    ):
+        result = build_graph(use_llm=True).invoke(
+            initial_state("How vaccines work")
+        )
+
+    fallback_writer.assert_called_once()
+    assert result["script"] == (
+        "Imagine vaccines prepare the immune system."
+    )
+    assert result["approved"] is True
+
+
+def test_gemini_critic_failure_uses_deterministic_critic():
+    from unittest.mock import patch
+
+    from app.graph.workflow import build_graph
+
+    research_result = {
+        "research_quality": "adequate",
+        "research_sources": [
+            {
+                "title": "Vaccine overview",
+                "url": "https://example.com/vaccines",
+                "summary": "Vaccines train the immune system.",
+            },
+            {
+                "title": "Immune response",
+                "url": "https://example.com/immunity",
+                "summary": "The immune system recognizes pathogens.",
+            },
+        ],
+        "research_notes": ["Two supporting sources were retrieved."],
+    }
+
+    with (
+        patch(
+            "app.graph.workflow.research_node",
+            return_value=research_result,
+        ),
+        patch(
+            "app.graph.workflow.gemini_scriptwriter_node",
+            return_value={
+                "script": "Imagine vaccines prepare the immune system."
+            },
+        ),
+        patch(
+            "app.graph.workflow.gemini_critic_node",
+            side_effect=RuntimeError("Simulated Gemini outage"),
+        ),
+        patch(
+            "app.graph.workflow.critic_node",
+            return_value={
+                "approved": True,
+                "critique": "Deterministic review approved.",
+                "critic_categories": [],
+                "research_gaps": [],
+            },
+        ) as fallback_critic,
+        patch("app.graph.workflow.scene_planner_node", return_value={}),
+    ):
+        result = build_graph(use_llm=True).invoke(
+            initial_state("How vaccines work")
+        )
+
+    fallback_critic.assert_called_once()
+    assert result["approved"] is True
+    assert "Deterministic review approved." in result["critique"]
+
+def test_binary_search_fallback_is_topic_specific_and_evidence_grounded():
+    from app.graph.nodes import scriptwriter_node
+
+    state = initial_state(topic="How binary search works")
+    state["category"] = "cs"
+    state["research_sources"] = [
+        {
+            "title": "Binary search",
+            "url": "https://example.com/binary-search",
+            "summary": (
+                "Binary search is a search algorithm that finds the "
+                "position of a target value within a sorted array. "
+                "Binary search compares the target value to the middle "
+                "element of the array. If they are not equal, the half "
+                "in which the target cannot lie is eliminated and the "
+                "search continues on the remaining half. If the search "
+                "ends with the remaining half being empty, the target is "
+                "not in the array."
+            ),
+        },
+        {
+            "title": "Optimal binary search tree",
+            "url": "https://example.com/optimal-bst",
+            "summary": (
+                "Optimal BSTs are generally divided into two types: "
+                "static and dynamic."
+            ),
+        },
+    ]
+
+    script = scriptwriter_node(state)["script"]
+    lower = script.casefold()
+
+    assert 80 <= len(script.split()) <= 180
+    assert "sorted array" in lower
+    assert "middle element" in lower
+    assert "remaining half" in lower
+    assert "empty" in lower
+    assert "optimal bst" not in lower
+    assert "static and dynamic" not in lower
+    assert "the key is to understand the evidence behind" not in lower
+    assert "following each step carefully" not in lower
+
+
+def test_cs_binary_search_does_not_call_physics_builder(monkeypatch):
+    import app.graph.nodes as nodes
+
+    def unexpected_physics_builder(*args, **kwargs):
+        raise AssertionError("CS topics must not invoke the Physics builder.")
+
+    monkeypatch.setattr(
+        nodes,
+        "_multi_concept_physics_script",
+        unexpected_physics_builder,
+    )
+
+    state = initial_state(topic="How binary search works")
+    state["category"] = "cs"
+    state["research_sources"] = [
+        {
+            "title": "Binary search",
+            "url": "https://example.com/binary-search",
+            "summary": (
+                "Binary search is a search algorithm that finds the "
+                "position of a target value within a sorted array. "
+                "Binary search compares the target value to the middle "
+                "element of the array. If they are not equal, the half "
+                "in which the target cannot lie is eliminated and the "
+                "search continues on the remaining half. If the search "
+                "ends with the remaining half being empty, the target is "
+                "not in the array."
+            ),
+        },
+    ]
+
+    result = nodes.scriptwriter_node(state)
+    assert "middle element" in result["script"].casefold()
+
+
+@pytest.mark.parametrize(
+    ("setting", "visual_planner", "api_key", "expected"),
+    [
+        (True, None, None, "[visual-planner] enabled"),
+        (False, None, "test-key", "[visual-planner] disabled (explicitly disabled)"),
+        (None, "off", "test-key", "[visual-planner] disabled (VISUAL_PLANNER=off)"),
+        (None, None, None, "[visual-planner] disabled (GEMINI_API_KEY is not set)"),
+        (None, None, "test-key", "[visual-planner] enabled"),
+    ],
+)
+def test_visual_planner_resolution(
+    monkeypatch, capsys, setting, visual_planner, api_key, expected
+):
+    if visual_planner is None:
+        monkeypatch.delenv("VISUAL_PLANNER", raising=False)
+    else:
+        monkeypatch.setenv("VISUAL_PLANNER", visual_planner)
+
+    if api_key is None:
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    else:
+        monkeypatch.setenv("GEMINI_API_KEY", api_key)
+
+    build_graph(use_gemini_planner=setting)
+
+    output = capsys.readouterr().out
+    assert output.count("[visual-planner]") == 1
+    assert expected in output
