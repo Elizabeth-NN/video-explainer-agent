@@ -25,6 +25,8 @@ import {
   ACCENTS,
 } from "./visuals/kit";
 import {
+  binarySearchPhaseFromNarration,
+  isBinarySearchPhase,
   isMergeInsertionSort,
   isMergeSortPhase,
   mergeSortPhaseFromNarration,
@@ -1258,22 +1260,8 @@ const csFallbackSpec = (
   // Use the existing array visual when binary-search scenes lack
   // a valid planner-provided visual.
   if (/binary[\s-]+search|half-interval search/i.test(text)) {
-    const narration = scene.narration.toLowerCase();
-
-    let phase: "overview" | "midpoint" | "elimination" | "found" | "not-found" =
-      "overview";
-    let target = 25;
-
-    if (/not in the array|not found|candidates become empty|remaining half being empty|absent/.test(narration)) {
-      phase = "not-found";
-      target = 26;
-    } else if (/eliminat|remaining half|cannot lie|narrow(?:s|ing)? the search range/.test(narration)) {
-      phase = "elimination";
-    } else if (/middle element|middle value|middle of the array|compares the target/.test(narration)) {
-      phase = "midpoint";
-    } else if (/target is found|found at|matches the target/.test(narration)) {
-      phase = "found";
-    }
+    const phase = binarySearchPhaseFromNarration(scene.narration);
+    const target = phase === "not-found" ? 26 : 25;
 
     return {
       type: "array",
@@ -1688,6 +1676,13 @@ export const resolveVisualSpec = (
           : mergeSortPhaseFromNarration(scene.narration);
         return { ...planned, phase };
       }
+    } else if (planned.type === "array" && planned.algorithm === "binary-search") {
+      // Old Binary Search props can also omit the phase. Preserve a valid
+      // phase and the planned target; otherwise infer from this scene.
+      const phase = isBinarySearchPhase(planned.phase)
+        ? planned.phase
+        : binarySearchPhaseFromNarration(scene.narration);
+      return { ...planned, phase };
     } else {
       return planned;
     }

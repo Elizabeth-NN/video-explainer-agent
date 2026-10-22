@@ -1662,12 +1662,34 @@ def _merge_sort_phase(sentence: str) -> str:
     return "overview"
 
 
+_BINARY_SEARCH_PHASES = frozenset(
+    {"overview", "midpoint", "elimination", "found", "not-found"}
+)
+
+
+def _is_binary_search_topic(topic: str) -> bool:
+    topic_text = topic.lower()
+    return "binary search" in topic_text and "binary search tree" not in topic_text
+
+
+def _is_binary_search_tree_narration(narration: str) -> bool:
+    """True when narration explicitly discusses a binary search tree."""
+    return bool(
+        re.search(
+            r"\bbinary search trees?\b|\bbst\b",
+            narration,
+            re.IGNORECASE,
+        )
+    )
+
+
 def _binary_search_phase(sentence: str) -> tuple[str, int]:
     """Determine the binary-search visual phase from narration."""
     if any(term in sentence for term in (
         "remaining half being empty",
         "not in the array",
         "not found",
+        "absent",
     )):
         return "not-found", 20
 
@@ -1715,10 +1737,7 @@ def _deterministic_library_visual(
 
     # Use the overall topic to recognize binary-search scenes even
     # when individual narration sentences do not repeat the algorithm name.
-    is_binary_search_topic = (
-        "binary search" in topic_text
-        and "binary search tree" not in topic_text
-    )
+    is_binary_search_topic = _is_binary_search_topic(topic)
 
     if is_binary_search_topic:
         phase, target = _binary_search_phase(sentence)
@@ -2250,6 +2269,80 @@ def _assign_merge_sort_phases(scenes: list[dict]) -> None:
         scene["visual"]["phase"] = fallback_plan[index % len(fallback_plan)]
 
 
+def _repair_binary_search_visuals(
+    scenes: list[dict],
+    topic: str,
+    category: str,
+) -> None:
+    """Fill missing or conflicting Binary Search visuals for a CS Binary Search topic.
+
+    This only runs for a CS topic whose overall subject is Binary Search. A
+    scene that names another algorithm or explicitly discusses a binary search
+    tree is left untouched. Existing Binary Search visuals are left for the
+    phase post-pass, preserving their phases and targets.
+    """
+    if category != "cs" or not _is_binary_search_topic(topic):
+        return
+
+    for scene in scenes:
+        narration = str(scene.get("narration", ""))
+        if _is_binary_search_tree_narration(narration):
+            continue
+        if _named_algorithms(narration) - {"binary-search"}:
+            continue
+
+        visual = scene.get("visual")
+        if isinstance(visual, dict):
+            if visual.get("algorithm") == "binary-search":
+                continue
+            # Only an array with a different algorithm is a clear conflict.
+            # Other visual types are intentionally preserved.
+            if visual.get("type") != "array":
+                continue
+        elif visual is not None:
+            continue
+
+        fallback = _deterministic_library_visual(topic, narration)
+        if (
+            isinstance(fallback, dict)
+            and fallback.get("type") == "array"
+            and fallback.get("algorithm") == "binary-search"
+        ):
+            scene["visual"] = fallback
+
+
+def _assign_binary_search_phases(scenes: list[dict]) -> None:
+    """Fill missing or invalid Binary Search phases from scene narration.
+
+    Existing valid phases and search targets are preserved. Scenes that
+    explicitly name another algorithm are skipped so a Binary Search visual
+    cannot inherit a phase from unrelated narration. Scenes are never removed.
+    """
+    for scene in scenes:
+        visual = scene.get("visual")
+        if not isinstance(visual, dict):
+            continue
+        if visual.get("type") != "array":
+            continue
+        if visual.get("algorithm") != "binary-search":
+            continue
+
+        phase = visual.get("phase")
+        if phase in _BINARY_SEARCH_PHASES:
+            continue
+
+        narration = str(scene.get("narration", ""))
+        narration_algorithms = _named_algorithms(narration)
+        if (
+            narration_algorithms - {"binary-search"}
+            and "binary-search" not in narration_algorithms
+        ):
+            continue
+
+        inferred, _target = _binary_search_phase(narration.casefold())
+        visual["phase"] = inferred
+
+
 def scene_planner_node(
     state: VideoState,
     *,
@@ -2374,5 +2467,9 @@ def scene_planner_node(
     # Apply to planner, fallback, and reused visuals alike. This is what makes
     # the stored phase independent of whether Gemini remembered to emit one.
     _assign_merge_sort_phases(scenes)
+    _repair_binary_search_visuals(
+        scenes, topic, state.get("category", "cs")
+    )
+    _assign_binary_search_phases(scenes)
 
     return {"scenes": scenes}

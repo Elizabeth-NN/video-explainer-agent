@@ -85,6 +85,56 @@ export const mergeSortPhaseFromNarration = (text: string): MergeSortPhase => {
 };
 
 
+export type BinarySearchPhase =
+  | "overview"
+  | "midpoint"
+  | "elimination"
+  | "found"
+  | "not-found";
+
+export const BINARY_SEARCH_PHASES: readonly BinarySearchPhase[] = [
+  "overview", "midpoint", "elimination", "found", "not-found",
+];
+
+export const isBinarySearchPhase = (
+  value: unknown,
+): value is BinarySearchPhase =>
+  typeof value === "string" &&
+  (BINARY_SEARCH_PHASES as readonly string[]).includes(value);
+
+/**
+ * Infer a Binary Search stage from narration. Mirrors the backend's
+ * `_binary_search_phase()` wording, including the legacy fallback phrases in
+ * `csFallbackSpec`, so old props and newly planned props agree.
+ */
+export const binarySearchPhaseFromNarration = (
+  text: string,
+): BinarySearchPhase => {
+  const s = text.toLowerCase().replace(/\s+/g, " ").trim();
+  if (!s) return "overview";
+
+  if (
+    /not in the array|not found|absent|remaining half being empty/.test(s)
+  ) {
+    return "not-found";
+  }
+  if (
+    /eliminat|remaining half|cannot lie|narrow(?:s|ing)? the search range|search continues|repeating this|dividing the list in half/.test(s)
+  ) {
+    return "elimination";
+  }
+  if (
+    /target value is found|target is found|target has been found|matches the middle|you are finished|two outcomes|found at|matches the target/.test(s)
+  ) {
+    return "found";
+  }
+  if (/middle element|middle value|middle of the array|compares the target/.test(s)) {
+    return "midpoint";
+  }
+  return "overview";
+};
+
+
 export const bubbleSort = (input: number[]): ArrayFrame[] => {
   const a = [...input];
   const n = a.length;

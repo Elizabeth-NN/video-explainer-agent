@@ -1,0 +1,102 @@
+{
+  "topic": "How binary search works",
+  "category": "cs",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Imagine searching a sorted list for one target value.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: Imagine searching a sorted list for one target value. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "audioFile": "audio/scene_001.mp3",
+      "durationInFrames": 96,
+      "from": 0
+    },
+    {
+      "sceneNumber": 2,
+      "narration": "In computer science, binary search, also known as half-interval search, logarithmic search, or binary chop, is a search algorithm that finds the position of a target value within a sorted array.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: In computer science, binary search, also known as half-interval search, logarithmic search, or binary chop, is a search algorithm that finds the position of a target value within a sorted array. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "visual": {
+        "type": "array",
+        "title": "Binary search",
+        "values": [
+          3,
+          8,
+          12,
+          19,
+          25,
+          31,
+          42
+        ],
+        "algorithm": "binary-search",
+        "target": 25,
+        "phase": "overview"
+      },
+      "audioFile": "audio/scene_002.mp3",
+      "durationInFrames": 294,
+      "from": 96
+    },
+    {
+      "sceneNumber": 3,
+      "narration": "Binary search compares the target value to the middle element of the array.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: Binary search compares the target value to the middle element of the array. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "visual": {
+        "type": "array",
+        "title": "Binary search",
+        "values": [
+          3,
+          8,
+          12,
+          19,
+          25,
+          31,
+          42
+        ],
+        "algorithm": "binary-search",
+        "target": 25,
+        "phase": "midpoint"
+      },
+      "audioFile": "audio/scene_003.mp3",
+      "durationInFrames": 112,
+      "from": 390
+    },
+    {
+      "sceneNumber": 4,
+      "narration": "If they are not equal, the half in which the target cannot lie is eliminated and the search continues on the remaining half, again taking the middle element to compare to the target value, and repeating this until the target value is found.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: If they are not equal, the half in which the target cannot lie is eliminated and the search continues on the remaining half, again taking the middle element to compare to the target value, and repeating this until the target value is found. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "audioFile": "audio/scene_004.mp3",
+      "durationInFrames": 328,
+      "from": 502
+    },
+    {
+      "sceneNumber": 5,
+      "narration": "If the search ends with the remaining half being empty, the target is not in the array.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: If the search ends with the remaining half being empty, the target is not in the array. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "visual": {
+        "type": "array",
+        "title": "An array of values",
+        "values": [
+          5,
+          2,
+          9,
+          1,
+          7,
+          3
+        ],
+        "algorithm": "bubble-sort"
+      },
+      "audioFile": "audio/scene_005.mp3",
+      "durationInFrames": 123,
+      "from": 830
+    },
+    {
+      "sceneNumber": 6,
+      "narration": "The process has two outcomes: the target is found, or the remaining candidates become empty.",
+      "visualDescription": "Illustrate the specific idea in this scene with a simple, clearly labelled diagram or motion graphic. Focus on the entities and relationships stated or directly implied by the narration. Scene narration: The process has two outcomes: the target is found, or the remaining candidates become empty. Avoid unrelated topic diagrams, invented data, and unsupported factual claims.",
+      "audioFile": "audio/scene_006.mp3",
+      "durationInFrames": 148,
+      "from": 953
+    }
+  ]
+}

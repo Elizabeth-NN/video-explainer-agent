@@ -2,9 +2,10 @@
 import assert from "node:assert/strict";
 import { arrayTrace } from "./array";
 import {
-  binarySearch, bubbleSort, buildBst, buildMergeSortStory, chainTrace,
-  graphTrace, insertionSort, linearSearch, mergeSort,
-  mergeSortPhaseFromNarration, selectionSort, traversalOrder, treeTrace,
+  binarySearch, binarySearchPhaseFromNarration, bubbleSort, buildBst,
+  buildMergeSortStory, chainTrace, graphTrace, insertionSort, linearSearch,
+  mergeSort, mergeSortPhaseFromNarration, selectionSort, traversalOrder,
+  treeTrace,
 } from "./algorithms";
 
 const input = [5, 2, 9, 1, 7, 3];
@@ -211,6 +212,39 @@ assert.ok(
   ),
   "binary overview is sorted",
 );
+
+const invalidBinaryPhase = arrayTrace({
+  type: "array",
+  values: input,
+  algorithm: "binary-search",
+  target: 7,
+  phase: "split",
+});
+assert.equal(invalidBinaryPhase.length, 1, "invalid binary phase falls back to overview");
+assert.equal(
+  invalidBinaryPhase[0].note,
+  "Sorted array; looking for 7",
+  "invalid binary phase uses the overview note",
+);
+
+const binaryPhaseCases = [
+  ["Imagine searching a sorted list.", "overview"],
+  ["Binary search compares the middle element.", "midpoint"],
+  ["The half where the target cannot lie is eliminated.", "elimination"],
+  ["The target is found.", "found"],
+  ["The target is not in the array.", "not-found"],
+  [
+    "The process has two outcomes: the target is found, or the remaining candidates become empty.",
+    "found",
+  ],
+] as const;
+for (const [narration, expected] of binaryPhaseCases) {
+  assert.equal(
+    binarySearchPhaseFromNarration(narration),
+    expected,
+    `binary phase for: ${narration}`,
+  );
+}
 
 const t = buildBst([8, 3, 10, 1, 6, 14, 4]);
 assert.deepEqual(traversalOrder(t, "inorder"), [1, 3, 4, 6, 8, 10, 14], "inorder is sorted");

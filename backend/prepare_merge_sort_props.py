@@ -17,6 +17,7 @@ import copy
 import hashlib
 import json
 import math
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -90,10 +91,16 @@ def _validate_manifest(manifest: dict[str, Any]) -> None:
             )
 
 
-def _build_props(manifest: dict[str, Any], manifest_dir: Path) -> dict[str, Any]:
+def build_remotion_props(
+    manifest: dict[str, Any],
+    manifest_dir: Path,
+    phase_assigner: Callable[[list[dict]], None] | None = None,
+) -> dict[str, Any]:
+    """Convert a job manifest to Remotion props without touching source files."""
     _validate_manifest(manifest)
     scenes = copy.deepcopy(manifest["scenes"])
-    _assign_merge_sort_phases(scenes)
+    if phase_assigner is not None:
+        phase_assigner(scenes)
 
     props_scenes: list[dict[str, Any]] = []
     start_frame = 0
@@ -136,6 +143,11 @@ def _build_props(manifest: dict[str, Any], manifest_dir: Path) -> dict[str, Any]
         props.pop("category")
     return props
 
+
+def _build_props(manifest: dict[str, Any], manifest_dir: Path) -> dict[str, Any]:
+    return build_remotion_props(
+        manifest, manifest_dir, _assign_merge_sort_phases
+    )
 
 def validate_expected_job(props: dict[str, Any], manifest_dir: Path) -> None:
     """Validate the concrete 10-scene Merge Sort job and required fields."""

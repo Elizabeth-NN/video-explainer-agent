@@ -1723,6 +1723,364 @@ def test_deterministic_non_merge_algorithms_never_become_merge_sort():
     assert contrast["algorithm"] == "merge-sort"
 
 
+def test_assign_binary_search_phases_fills_missing_and_preserves_targets():
+    from app.graph.scene_planner import _assign_binary_search_phases
+
+    cases = [
+        ("Imagine searching a sorted list for one target value.", "overview"),
+        ("Binary search compares the target to the middle element.", "midpoint"),
+        (
+            "The half where the target cannot lie is eliminated and the search continues.",
+            "elimination",
+        ),
+        (
+            "The remaining half is empty, so the target is not in the array.",
+            "not-found",
+        ),
+        ("The target is found and the search is finished.", "found"),
+    ]
+    scenes = []
+    for index, (narration, _) in enumerate(cases, start=1):
+        scenes.append({
+            "scene_number": index,
+            "narration": narration,
+            "visual": {
+                "type": "array",
+                "algorithm": "binary-search",
+                "values": [3, 8, 12, 19, 25, 31, 42],
+                "target": 31,
+            },
+        })
+
+    _assign_binary_search_phases(scenes)
+
+    assert [scene["visual"]["phase"] for scene in scenes] == [
+        phase for _, phase in cases
+    ]
+    assert all(scene["visual"]["target"] == 31 for scene in scenes)
+
+
+def test_assign_binary_search_phases_preserves_valid_phase_and_skips_competing():
+    from app.graph.scene_planner import _assign_binary_search_phases
+
+    scenes = [
+        {
+            "scene_number": 1,
+            "narration": "Binary search compares the middle element.",
+            "visual": {
+                "type": "array", "algorithm": "binary-search", "values": [3, 8, 12],
+                "target": 8, "phase": "found",
+            },
+        },
+        {
+            "scene_number": 2,
+            "narration": "Insertion sort builds a sorted prefix.",
+            "visual": {
+                "type": "array", "algorithm": "binary-search", "values": [3, 8, 12],
+                "target": 8,
+            },
+        },
+        {
+            "scene_number": 3,
+            "narration": "Merge sort merges the sorted halves.",
+            "visual": {
+                "type": "array", "algorithm": "merge-sort", "values": [3, 8, 12],
+            },
+        },
+    ]
+
+    _assign_binary_search_phases(scenes)
+
+    assert scenes[0]["visual"]["phase"] == "found"
+    assert scenes[0]["visual"]["target"] == 8
+    assert "phase" not in scenes[1]["visual"]
+    assert "phase" not in scenes[2]["visual"]
+
+
+def test_assign_binary_search_phases_repairs_invalid_phase():
+    from app.graph.scene_planner import _assign_binary_search_phases
+
+    scene = {
+        "scene_number": 1,
+        "narration": "Binary search compares the middle value.",
+        "visual": {
+            "type": "array", "algorithm": "binary-search", "values": [3, 8, 12],
+            "target": 8, "phase": "split",
+        },
+    }
+
+    _assign_binary_search_phases([scene])
+
+    assert scene["visual"]["phase"] == "midpoint"
+    assert scene["visual"]["target"] == 8
+
+
+def test_repair_binary_search_visuals_fills_and_repairs_conflicts():
+    from app.graph.scene_planner import (
+        _assign_binary_search_phases,
+        _repair_binary_search_visuals,
+    )
+
+    scenes = [
+        {
+            "scene_number": 1,
+            "narration": "Imagine searching a sorted list for one target value.",
+        },
+        {
+            "scene_number": 2,
+            "narration": "The target is not in the array.",
+            "visual": {
+                "type": "array", "algorithm": "bubble-sort", "values": [5, 2, 9],
+            },
+        },
+        {
+            "scene_number": 3,
+            "narration": "Binary search compares the middle value.",
+            "visual": {
+                "type": "array", "algorithm": "binary-search",
+                "values": [3, 8, 12], "target": 42, "phase": "found",
+            },
+        },
+        {
+            "scene_number": 4,
+            "narration": "Bubble sort compares adjacent values.",
+            "visual": {
+                "type": "array", "algorithm": "bubble-sort", "values": [5, 2, 9],
+            },
+        },
+        {
+            "scene_number": 5,
+            "narration": "Insertion sort builds a sorted prefix.",
+        },
+    ]
+
+    _repair_binary_search_visuals(scenes, "How binary search works", "cs")
+    _assign_binary_search_phases(scenes)
+
+    assert len(scenes) == 5
+    assert scenes[0]["visual"]["algorithm"] == "binary-search"
+    assert scenes[0]["visual"]["phase"] == "overview"
+    assert scenes[1]["visual"]["algorithm"] == "binary-search"
+    assert scenes[1]["visual"]["phase"] == "not-found"
+    assert scenes[2]["visual"]["algorithm"] == "binary-search"
+    assert scenes[2]["visual"]["phase"] == "found"
+    assert scenes[2]["visual"]["target"] == 42
+    assert scenes[3]["visual"]["algorithm"] == "bubble-sort"
+    assert "phase" not in scenes[3]["visual"]
+    assert "visual" not in scenes[4]
+
+
+def test_repair_binary_search_visuals_handles_six_scene_manifest():
+    from app.graph.scene_planner import (
+        _assign_binary_search_phases,
+        _repair_binary_search_visuals,
+    )
+
+    narrations = [
+        "Imagine searching a sorted list for one target value.",
+        "In computer science, binary search is a search algorithm that finds a target in a sorted array.",
+        "Binary search compares the target value to the middle element of the array.",
+        "The half in which the target cannot lie is eliminated and the search continues on the remaining half.",
+        "If the search ends with the remaining half being empty, the target is not in the array.",
+        "The process has two outcomes: the target is found, or the remaining candidates become empty.",
+    ]
+    scenes = [
+        {"scene_number": 1, "narration": narrations[0]},
+        {
+            "scene_number": 2,
+            "narration": narrations[1],
+            "visual": {
+                "type": "array", "algorithm": "binary-search",
+                "values": [3, 8, 12, 19, 25, 31, 42], "target": 25,
+            },
+        },
+        {
+            "scene_number": 3,
+            "narration": narrations[2],
+            "visual": {
+                "type": "array", "algorithm": "binary-search",
+                "values": [3, 8, 12, 19, 25, 31, 42], "target": 25,
+            },
+        },
+        {"scene_number": 4, "narration": narrations[3]},
+        {
+            "scene_number": 5,
+            "narration": narrations[4],
+            "visual": {
+                "type": "array", "algorithm": "bubble-sort", "values": [5, 2, 9],
+            },
+        },
+        {"scene_number": 6, "narration": narrations[5]},
+    ]
+
+    _repair_binary_search_visuals(scenes, "How binary search works", "cs")
+    _assign_binary_search_phases(scenes)
+
+    assert len(scenes) == 6
+    assert [scene["visual"]["algorithm"] for scene in scenes] == [
+        "binary-search",
+    ] * 6
+    assert [scene["visual"]["phase"] for scene in scenes] == [
+        "overview", "overview", "midpoint",
+        "elimination", "not-found", "found",
+    ]
+    assert scenes[1]["visual"]["target"] == 25
+    assert scenes[2]["visual"]["target"] == 25
+
+
+def test_repair_binary_search_visuals_requires_cs_category():
+    from app.graph.scene_planner import _repair_binary_search_visuals
+
+    scenes = [{
+        "scene_number": 1,
+        "narration": "Imagine searching a sorted list for one target value.",
+    }]
+
+    _repair_binary_search_visuals(scenes, "How binary search works", "physics")
+
+    assert "visual" not in scenes[0]
+
+
+def test_repair_binary_search_visuals_skips_binary_search_tree_narration():
+    from app.graph.scene_planner import _repair_binary_search_visuals
+
+    scenes = [
+        {
+            "scene_number": 1,
+            "narration": "A binary search tree stores values in sorted order.",
+        },
+        {
+            "scene_number": 2,
+            "narration": "An optimal BST minimizes lookup cost.",
+        },
+        {
+            "scene_number": 3,
+            "narration": "Binary search compares the middle element.",
+        },
+    ]
+
+    _repair_binary_search_visuals(scenes, "How binary search works", "cs")
+
+    assert "visual" not in scenes[0]
+    assert "visual" not in scenes[1]
+    assert scenes[2]["visual"]["algorithm"] == "binary-search"
+    assert scenes[2]["visual"]["phase"] == "midpoint"
+
+
+def test_scene_planner_repairs_binary_visuals_from_planner_output(monkeypatch):
+    from app.graph import scene_planner
+
+    narrations = [
+        "Imagine searching a sorted list for one target value.",
+        "In computer science, binary search is a search algorithm that finds a target in a sorted array.",
+        "Binary search compares the target value to the middle element of the array.",
+        "The half in which the target cannot lie is eliminated and the search continues on the remaining half.",
+        "If the search ends with the remaining half being empty, the target is not in the array.",
+        "The process has two outcomes: the target is found, or the remaining candidates become empty.",
+    ]
+    binary = {
+        "type": "array",
+        "algorithm": "binary-search",
+        "values": [3, 8, 12, 19, 25, 31, 42],
+        "target": 25,
+    }
+    plans = [
+        {"concept": "Intro", "processKind": "algorithm", "visual": None},
+        {"concept": "Definition", "processKind": "algorithm", "visual": dict(binary)},
+        {"concept": "Middle", "processKind": "algorithm", "visual": dict(binary)},
+        {"concept": "Elimination", "processKind": "algorithm", "visual": None},
+        {
+            "concept": "Not found",
+            "processKind": "algorithm",
+            "visual": {
+                "type": "array", "algorithm": "bubble-sort", "values": [5, 2, 9],
+            },
+        },
+        {"concept": "Outcomes", "processKind": "algorithm", "visual": None},
+    ]
+    monkeypatch.setattr(
+        scene_planner, "_call_gemini_planner", lambda scenes, topic: plans,
+    )
+    monkeypatch.setattr(
+        scene_planner,
+        "_validate_with_remotion",
+        lambda specs: [{"ok": True} for _ in specs],
+    )
+
+    result = scene_planner.scene_planner_node({
+        "topic": "How binary search works",
+        "category": "cs",
+        "script": " ".join(narrations),
+        "approved": True,
+    }, use_gemini_planner=True)
+
+    scenes = result["scenes"]
+    assert len(scenes) == 6
+    assert [scene["visual"]["algorithm"] for scene in scenes] == [
+        "binary-search",
+    ] * 6
+    assert [scene["visual"]["phase"] for scene in scenes] == [
+        "overview", "overview", "midpoint",
+        "elimination", "not-found", "found",
+    ]
+
+
+def test_scene_planner_assigns_binary_phases_when_planner_omits_them(monkeypatch):
+    from app.graph import scene_planner
+
+    plans = [
+        {
+            "concept": "Overview",
+            "processKind": "algorithm",
+            "visual": {
+                "type": "array", "algorithm": "binary-search",
+                "values": [3, 8, 12, 19, 25, 31, 42], "target": 25,
+            },
+        },
+        {
+            "concept": "Midpoint",
+            "processKind": "algorithm",
+            "visual": {
+                "type": "array", "algorithm": "binary-search",
+                "values": [3, 8, 12, 19, 25, 31, 42], "target": 25,
+            },
+        },
+        {
+            "concept": "Not found",
+            "processKind": "algorithm",
+            "visual": {
+                "type": "array", "algorithm": "binary-search",
+                "values": [3, 8, 12, 19, 25, 31, 42], "target": 25,
+            },
+        },
+    ]
+    monkeypatch.setattr(
+        scene_planner, "_call_gemini_planner", lambda scenes, topic: plans,
+    )
+    monkeypatch.setattr(
+        scene_planner,
+        "_validate_with_remotion",
+        lambda specs: [{"ok": True} for _ in specs],
+    )
+
+    result = scene_planner.scene_planner_node({
+        "topic": "How binary search works",
+        "category": "cs",
+        "script": (
+            "Imagine searching a sorted list. "
+            "Binary search compares the middle element. "
+            "The target is not in the array."
+        ),
+        "approved": True,
+    }, use_gemini_planner=True)
+
+    scenes = result["scenes"]
+    assert [scene["visual"]["phase"] for scene in scenes] == [
+        "overview", "midpoint", "not-found",
+    ]
+    assert all(scene["visual"]["target"] == 25 for scene in scenes)
+
+
 def test_align_visual_data_reuses_first_merge_sort_values():
     from app.graph.scene_planner import _align_visual_data
 

@@ -230,6 +230,69 @@ test("valid merge-sort phase is preserved", () => {
   assert.equal(spec.phase, "sorted");
 });
 
+test("planned binary-search visual gets phase from narration and keeps its target", () => {
+  const planned = {
+    type: "array" as const,
+    values: [3, 8, 12, 19, 25, 31, 42],
+    algorithm: "binary-search" as const,
+    target: 31,
+  };
+
+  const spec = resolveVisualSpec(
+    makeScene("Binary search compares the middle element.", "", planned),
+    "How binary search works",
+    "cs",
+  );
+
+  assert.equal(spec.type, "array");
+  if (spec.type !== "array") assert.fail("Expected an array visual.");
+  assert.equal(spec.algorithm, "binary-search");
+  assert.equal(spec.phase, "midpoint");
+  assert.equal(spec.target, 31);
+});
+
+test("invalid binary-search phase is repaired without changing its target", () => {
+  const planned = {
+    type: "array" as const,
+    values: [3, 8, 12, 19, 25, 31, 42],
+    algorithm: "binary-search" as const,
+    target: 31,
+    phase: "split" as const,
+  };
+
+  const spec = resolveVisualSpec(
+    makeScene("The target is not in the array.", "", planned),
+    "How binary search works",
+    "cs",
+  );
+
+  assert.equal(spec.type, "array");
+  if (spec.type !== "array") assert.fail("Expected an array visual.");
+  assert.equal(spec.phase, "not-found");
+  assert.equal(spec.target, 31);
+});
+
+test("valid binary-search phase is preserved", () => {
+  const planned = {
+    type: "array" as const,
+    values: [3, 8, 12, 19, 25, 31, 42],
+    algorithm: "binary-search" as const,
+    target: 31,
+    phase: "found" as const,
+  };
+
+  const spec = resolveVisualSpec(
+    makeScene("Binary search compares the middle element.", "", planned),
+    "How binary search works",
+    "cs",
+  );
+
+  assert.equal(spec.type, "array");
+  if (spec.type !== "array") assert.fail("Expected an array visual.");
+  assert.equal(spec.phase, "found");
+  assert.equal(spec.target, 31);
+});
+
 test("prepared merge-sort phases survive into the resolved renderer spec", () => {
   const phases = ["overview", "split", "merge", "sorted"] as const;
 

@@ -4,8 +4,8 @@ import { C, Footnote, Note, stage, useT, useTrace } from "./kit";
 import {
   type ArrayFrame, type MergeSortNode, type MergeSortPass, type MergeSortStep,
   ARRAY_ALGORITHMS, binarySearch, bubbleSort, buildMergeSortStory,
-  insertionSort, isMergeSortPhase, linearSearch, mergeSort, selectionSort,
-  walkArray,
+  insertionSort, isBinarySearchPhase, isMergeSortPhase, linearSearch,
+  mergeSort, selectionSort, walkArray,
 } from "./algorithms";
 import { HINTS } from "./hints";
 
@@ -57,6 +57,15 @@ export const arrayTrace = (spec: ArraySpec): ArrayFrame[] => {
 
   if (spec.algorithm === "binary-search" && spec.phase) {
     const frames = binarySearch(spec.values, target);
+
+    if (!isBinarySearchPhase(spec.phase)) {
+      const values = [...spec.values].sort((a, b) => a - b);
+      return [{
+        values,
+        range: [0, values.length - 1],
+        note: `Sorted array; looking for ${target}`,
+      }];
+    }
 
     switch (spec.phase) {
       case "overview": {
