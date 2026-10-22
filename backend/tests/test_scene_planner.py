@@ -174,7 +174,7 @@ def test_approved_graph_output_contains_scenes():
             return_value={"approved": True, "critique": "Approved."},
         ),
     ):
-        result = build_graph().invoke(state)
+        result = build_graph(use_gemini_planner=False).invoke(state)
 
     assert result["approved"] is True
     assert len(result["scenes"]) == 2
@@ -1301,3 +1301,97 @@ def test_planner_drops_point_with_unsupported_source():
         "SPLIT THE LIST", "MERGE THE PARTS",
     ]
     assert "sources" not in visual
+
+
+def test_reuses_topic_visual_for_middle_null_scenes(monkeypatch):
+    from app.graph import scene_planner
+
+    plans = [
+        {"concept": "Opening", "processKind": "algorithm", "visual": None},
+        {
+            "concept": "How the algorithm works",
+            "processKind": "algorithm",
+            "visual": {
+                "type": "array",
+                "algorithm": "merge-sort",
+                "values": [5, 2, 9],
+                "phase": "midpoint",
+            },
+        },
+        {"concept": "Properties", "processKind": "algorithm", "visual": None},
+        {"concept": "Closing", "processKind": "algorithm", "visual": None},
+    ]
+
+    monkeypatch.setattr(
+        scene_planner,
+        "_call_gemini_planner",
+        lambda scenes, topic: plans,
+    )
+
+    result = scene_planner.scene_planner_node({
+        "topic": "merge sort",
+        "category": "cs",
+        "script": "First idea. Second idea. Third idea. Fourth idea.",
+        "approved": True,
+    }, use_gemini_planner=True)
+
+    scenes = result["scenes"]
+
+    assert "visual" not in scenes[0]
+    assert scenes[1]["visual"]["algorithm"] == "merge-sort"
+    assert scenes[1]["visual"]["phase"] == "midpoint"
+
+    reused = scenes[2]["visual"]
+    assert reused["type"] == "array"
+    assert reused["algorithm"] == "merge-sort"
+    assert reused["values"] == [5, 2, 9]
+    assert "phase" not in reused
+
+    assert "visual" not in scenes[3]
+
+
+def test_reuse_does_not_cross_copy_bubble_and_merge_sort_visuals(monkeypatch):
+    from app.graph import scene_planner
+
+    plans = [
+        {
+            "concept": "Bubble sort",
+            "processKind": "algorithm",
+            "visual": {
+                "type": "array",
+                "algorithm": "bubble-sort",
+                "values": [3, 1, 2],
+            },
+        },
+        {
+            "concept": "Merge sort",
+            "processKind": "algorithm",
+            "visual": {
+                "type": "array",
+                "algorithm": "merge-sort",
+                "values": [9, 5, 7],
+            },
+        },
+        {"concept": "Properties", "processKind": "algorithm", "visual": None},
+        {"concept": "Closing", "processKind": "algorithm", "visual": None},
+    ]
+
+    monkeypatch.setattr(
+        scene_planner,
+        "_call_gemini_planner",
+        lambda scenes, topic: plans,
+    )
+
+    result = scene_planner.scene_planner_node({
+        "topic": "sorting algorithms",
+        "category": "cs",
+        "script": "First idea. Second idea. Third idea. Fourth idea.",
+        "approved": True,
+    }, use_gemini_planner=True)
+
+    scenes = result["scenes"]
+
+    assert scenes[0]["visual"]["algorithm"] == "bubble-sort"
+    assert scenes[0]["visual"]["values"] == [3, 1, 2]
+    assert scenes[1]["visual"]["algorithm"] == "merge-sort"
+    assert scenes[1]["visual"]["values"] == [9, 5, 7]

@@ -286,7 +286,7 @@ Rules:
 - Choose per scene from the concept. Use the topic to keep inputs consistent across scenes, but choose each visual from that scene's concept.
 - When consecutive scenes explain the same algorithm or structure, reuse the same visual type and the same input values, varying only phase or operations.
 - If the topic is a named algorithm or data structure that has a matching library visual, use that visual for every scene that describes how it works, including scenes that don't repeat the algorithm's name (for example scenes about splitting, merging, comparing, ordering or stability). Use the same input values in each of those scenes.
-- If a scene only states history, trivia, a definition, or a general claim with nothing to show (for example who invented something or where it is used), return visual as null instead of a decorative diagram.
+- Return null only if the scene has no connection to the video's topic. If the topic is a named algorithm or data structure with a matching library visual and the scene discusses that algorithm, its properties (stable, efficient, comparison-based), its variants, or how it relates to other algorithms, use the topic's visual with the same input values. Put facts like inventors, dates or related algorithms in the narration, not in labels.
 - Labels: max 3 words, UPPERCASE for node labels. Footnote: one factual sentence.
 - Always include a footnote of 'Illustrative values' on array, tree, chain and graph visuals.
 - Only use facts from the narration. Never invent numbers.
@@ -1947,6 +1947,55 @@ def _align_visual_data(scenes: list[dict]) -> list[tuple[dict, dict]]:
     return changed
 
 
+_REUSABLE_VISUAL_TYPES = frozenset({"array", "tree", "chain", "graph"})
+
+
+def _reuse_topic_visuals(
+    scenes: list[dict],
+    planner_results: list[dict[str, Any] | None],
+) -> None:
+    """Copy an existing algorithm visual onto middle scenes the planner left null.
+
+    The first non-"none" array/tree/chain/graph visual in the video is treated
+    as the topic visual. Opening and closing scenes are left alone, and contrast
+    scenes are skipped because they describe a different idea.
+    """
+    source = None
+    for scene in scenes:
+        visual = scene.get("visual")
+        if (
+            isinstance(visual, dict)
+            and visual.get("type") in _REUSABLE_VISUAL_TYPES
+            and visual.get("algorithm", "none") != "none"
+        ):
+            source = visual
+            break
+
+    if source is None:
+        return
+
+    last_index = len(scenes) - 1
+    for index, scene in enumerate(scenes):
+        if index == 0 or index == last_index:
+            continue
+        if index >= len(planner_results):
+            continue
+        plan = planner_results[index]
+        if plan is None or plan.get("visual") is not None:
+            continue
+        if scene.get("processKind") == "contrast":
+            continue
+        if scene.get("visual") is not None:
+            continue
+
+        reused = copy.deepcopy(source)
+        reused.pop("phase", None)
+        scene["visual"] = reused
+        print(
+            f"[visual-planner] scene {scene['scene_number']}: reusing topic visual"
+        )
+
+
 def scene_planner_node(
     state: VideoState,
     *,
@@ -2065,5 +2114,7 @@ def scene_planner_node(
                 for (scene, original), check in zip(aligned, checks):
                     if not check.get("ok"):
                         scene["visual"] = original
+
+        _reuse_topic_visuals(scenes, planner_results)
 
     return {"scenes": scenes}

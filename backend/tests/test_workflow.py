@@ -1,4 +1,5 @@
 
+import pytest
 from unittest.mock import MagicMock, patch
 
 from app.graph.nodes import (
@@ -121,7 +122,7 @@ def test_graph_revises_and_approves_script():
         "app.graph.workflow.research_node",
         return_value=fake_research,
     ):
-        graph = build_graph()
+        graph = build_graph(use_gemini_planner=False)
         state = initial_state("How does solar energy work?")
         result = graph.invoke(state)
 
@@ -1108,7 +1109,7 @@ def test_graph_approves_script_with_adequate_research():
         "app.graph.workflow.research_node",
         return_value=fake_research,
     ):
-        result = build_graph().invoke(
+        result = build_graph(use_gemini_planner=False).invoke(
             initial_state("How a process works")
         )
 
@@ -1402,7 +1403,7 @@ def test_llm_workflow_uses_selected_writer_for_revision():
             ],
         ),
     ):
-        result = build_graph(use_llm=True).invoke(state)
+        result = build_graph(use_llm=True, use_gemini_planner=False).invoke(state)
 
     assert gemini_writer.call_count == 2
     assert (
@@ -2141,3 +2142,33 @@ def test_cs_binary_search_does_not_call_physics_builder(monkeypatch):
 
     result = nodes.scriptwriter_node(state)
     assert "middle element" in result["script"].casefold()
+
+
+@pytest.mark.parametrize(
+    ("setting", "visual_planner", "api_key", "expected"),
+    [
+        (True, None, None, "[visual-planner] enabled"),
+        (False, None, "test-key", "[visual-planner] disabled (explicitly disabled)"),
+        (None, "off", "test-key", "[visual-planner] disabled (VISUAL_PLANNER=off)"),
+        (None, None, None, "[visual-planner] disabled (GEMINI_API_KEY is not set)"),
+        (None, None, "test-key", "[visual-planner] enabled"),
+    ],
+)
+def test_visual_planner_resolution(
+    monkeypatch, capsys, setting, visual_planner, api_key, expected
+):
+    if visual_planner is None:
+        monkeypatch.delenv("VISUAL_PLANNER", raising=False)
+    else:
+        monkeypatch.setenv("VISUAL_PLANNER", visual_planner)
+
+    if api_key is None:
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    else:
+        monkeypatch.setenv("GEMINI_API_KEY", api_key)
+
+    build_graph(use_gemini_planner=setting)
+
+    output = capsys.readouterr().out
+    assert output.count("[visual-planner]") == 1
+    assert expected in output

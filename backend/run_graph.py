@@ -3,11 +3,19 @@ import argparse
 import asyncio
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from app.graph.workflow import build_graph
 from app.services.narration import DEFAULT_VOICE, generate_narration
 from app.services.remotion_renderer import render_remotion_video
 from app.services.physics_animation_dispatcher import render_physics_clips
 from app.services.video_renderer import render_video
+
+
+BACKEND_DIR = Path(__file__).resolve().parent
+# The web API spawns this script without exporting backend/.env, so load it
+# here before build_graph resolves the visual planner.
+load_dotenv(BACKEND_DIR / ".env")
 
 
 def main():
@@ -39,7 +47,18 @@ def main():
     parser.add_argument(
         "--visual-planner",
         action="store_true",
-        help="Use Gemini to plan per-scene visuals (concept, processKind, visual spec).",
+        default=None,
+        help=(
+            "Use Gemini to plan per-scene visuals (concept, processKind, "
+            "visual spec). Defaults to the VISUAL_PLANNER/GEMINI_API_KEY "
+            "environment rule."
+        ),
+    )
+    parser.add_argument(
+        "--no-visual-planner",
+        dest="visual_planner",
+        action="store_false",
+        help="Disable the Gemini visual planner.",
     )
     parser.add_argument(
         "--audio",

@@ -1,3 +1,5 @@
+import os
+
 from langgraph.graph import END, START, StateGraph
 
 from app.graph.scene_planner import scene_planner_node
@@ -107,13 +109,36 @@ def _gemini_critic_with_fallback(state: VideoState) -> dict:
         return critic_node(state)
 
 
+def _resolve_visual_planner(setting: bool | None) -> tuple[bool, str]:
+    """Resolve the visual planner switch, plus a reason when it ends up off."""
+    if setting is not None:
+        return setting, "" if setting else "explicitly disabled"
+
+    env_value = os.getenv("VISUAL_PLANNER", "").strip().lower()
+    if env_value in {"off", "0", "false"}:
+        return False, f"VISUAL_PLANNER={env_value}"
+
+    if not os.getenv("GEMINI_API_KEY", "").strip():
+        return False, "GEMINI_API_KEY is not set"
+
+    return True, ""
+
+
 def build_graph(
     checkpointer=None,
     use_llm: bool = False,
     use_semantic_graph: bool = False,
-    use_gemini_planner: bool = False,
+    use_gemini_planner: bool | None = None,
 ):
     """Build the graph with Wikipedia-first, bounded Tavily fallback."""
+    use_gemini_planner, disabled_reason = _resolve_visual_planner(
+        use_gemini_planner
+    )
+    if use_gemini_planner:
+        print("[visual-planner] enabled")
+    else:
+        print(f"[visual-planner] disabled ({disabled_reason})")
+
     graph = StateGraph(VideoState)
 
     writer = _gemini_writer_with_fallback if use_llm else scriptwriter_node
