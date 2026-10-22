@@ -1202,6 +1202,527 @@ def test_narration_only_binary_search_visual_includes_phase():
     assert visual["target"] == 25
 
 
+def test_merge_sort_phase_from_narration():
+    from app.graph.scene_planner import _merge_sort_phase
+
+    cases = [
+        ("Merge sort splits the list into halves.", "split"),
+        ("It divides the array into two smaller arrays.", "split"),
+        ("Then it merges the sorted halves back together.", "merge"),
+        ("It combines the two sorted parts.", "merge"),
+        ("The final array is fully sorted.", "sorted"),
+        ("The result is ordered.", "sorted"),
+        ("Merge sort was invented by John von Neumann in 1945.", "overview"),
+        ("Merge sort is a stable, comparison-based algorithm.", "overview"),
+        ("Merge sort is a divide-and-conquer algorithm.", "overview"),
+        ("The two halves are merged.", "merge"),
+        ("The two halves are combined.", "merge"),
+        ("The two sorted halves are merged.", "merge"),
+        ("It merges adjacent pairs.", "merge"),
+        ("It combines the results into one list.", "merge"),
+        ("The result is a sorted array.", "sorted"),
+        ("The result is an ordered list.", "sorted"),
+        ("After sorting, the list is in ascending order.", "sorted"),
+        (
+            "It merges the sorted halves, and the final array is fully sorted.",
+            "sorted",
+        ),
+        (
+            "Merge-insertion sort or the Ford-Johnson algorithm is a "
+            "comparison sorting algorithm.",
+            "overview",
+        ),
+    ]
+
+    for narration, expected in cases:
+        assert _merge_sort_phase(narration) == expected, narration
+
+
+def test_deterministic_selector_chooses_merge_sort_array_visual():
+    from app.graph.scene_planner import _deterministic_library_visual
+
+    visual = _deterministic_library_visual(
+        "merge sort",
+        "Merge sort splits the list into halves, sorts them, and merges them back.",
+    )
+
+    assert visual is not None
+    assert visual["type"] == "array"
+    assert visual["algorithm"] == "merge-sort"
+    assert visual["values"] == [38, 27, 43, 3, 9, 82, 10]
+    assert visual["phase"] == "merge"
+
+
+def test_deterministic_selector_does_not_treat_merge_insertion_as_merge_sort():
+    from app.graph.scene_planner import _deterministic_library_visual
+
+    visual = _deterministic_library_visual(
+        "merge sort",
+        "In computer science, merge-insertion sort or the Ford-Johnson "
+        "algorithm is a comparison sorting algorithm.",
+    )
+
+    assert visual is None or visual.get("algorithm") != "merge-sort"
+
+
+def test_assign_merge_sort_phases_fills_and_repairs_only_merge_sort_scenes():
+    from app.graph.scene_planner import _assign_merge_sort_phases
+
+    scenes = [
+        {
+            "scene_number": 1,
+            "narration": "Merge sort splits the list into halves.",
+            "visual": {
+                "type": "array", "algorithm": "merge-sort", "values": [5, 2, 9],
+            },
+        },
+        {
+            "scene_number": 2,
+            "narration": "It merges the sorted halves back together.",
+            "visual": {
+                "type": "array", "algorithm": "merge-sort", "values": [5, 2, 9],
+                "phase": "midpoint",
+            },
+        },
+        {
+            "scene_number": 3,
+            "narration": "Merge sort is a stable algorithm.",
+            "visual": {
+                "type": "array", "algorithm": "merge-sort", "values": [5, 2, 9],
+                "phase": "split",
+            },
+        },
+        {
+            "scene_number": 4,
+            "narration": "Bubble sort compares adjacent values.",
+            "visual": {
+                "type": "array", "algorithm": "bubble-sort", "values": [5, 2, 9],
+            },
+        },
+    ]
+
+    _assign_merge_sort_phases(scenes)
+
+    assert scenes[0]["visual"]["phase"] == "split"
+    assert scenes[1]["visual"]["phase"] == "merge"
+    # An already-valid phase is left alone.
+    assert scenes[2]["visual"]["phase"] == "split"
+    assert "phase" not in scenes[3]["visual"]
+
+
+def test_assign_merge_sort_phases_generic_video_gets_deterministic_plan():
+    import json
+
+    from app.graph.scene_planner import _assign_merge_sort_phases
+
+    narrations = [
+        "Imagine exploring merge sort and discovering how it works.",
+        "The key is to understand the evidence behind merge sort.",
+        "Start with the main process and the details that explain it.",
+        "Merge sort is an efficient, general-purpose, comparison-based sorting algorithm.",
+        "Most implementations of merge sort are stable, which means that the relative order of equal elements is the same between the input and output.",
+        "Merge sort is a divide-and-conquer algorithm that was invented by John von Neumann in 1945.",
+        "A detailed description and analysis of bottom-up merge sort appeared in a report by Goldstine and von Neumann as early as 1948.",
+        "In computer science, merge-insertion sort or the Ford–Johnson algorithm is a comparison sorting algorithm published in 1959 by L.",
+        "It uses fewer comparisons in the worst case than the best previously known algorithms, binary insertion sort and merge sort, and for 20 years it was the sorting algorithm with the fewest known comparisons.",
+        "These details connect the main ideas and show how the process works, while keeping the explanation grounded in the available evidence.",
+    ]
+    scenes = [
+        {
+            "scene_number": index,
+            "narration": narration,
+            "visual": {
+                "type": "array",
+                "algorithm": "merge-sort",
+                "values": [38, 27, 43, 3, 9, 82, 10],
+            },
+        }
+        for index, narration in enumerate(narrations, start=1)
+    ]
+
+    _assign_merge_sort_phases(scenes)
+
+    assert "visual" not in scenes[7]  # Merge-Insertion is not Merge Sort.
+    phases = [
+        scene["visual"]["phase"]
+        for scene in scenes
+        if isinstance(scene.get("visual"), dict)
+    ]
+    assert phases == [
+        "overview",
+        "split",
+        "merge",
+        "sorted",
+        "overview",
+        "split",
+        "merge",
+        "sorted",
+        "overview",
+    ]
+
+    # The phase is ordinary JSON data and survives serialization into a manifest.
+    serialized = json.loads(json.dumps({"scenes": scenes}))
+    serialized_phases = [
+        scene["visual"]["phase"]
+        for scene in serialized["scenes"]
+        if isinstance(scene.get("visual"), dict)
+    ]
+    assert serialized_phases == phases
+
+
+def test_assign_merge_sort_phases_keeps_narration_evidence():
+    from app.graph.scene_planner import _assign_merge_sort_phases
+
+    scenes = [
+        {
+            "scene_number": 1,
+            "narration": "This is a generic introduction.",
+            "visual": {
+                "type": "array", "algorithm": "merge-sort", "values": [5, 2, 9],
+            },
+        },
+        {
+            "scene_number": 2,
+            "narration": "It merges the sorted halves back together.",
+            "visual": {
+                "type": "array", "algorithm": "merge-sort", "values": [5, 2, 9],
+            },
+        },
+        {
+            "scene_number": 3,
+            "narration": "This is a generic closing.",
+            "visual": {
+                "type": "array", "algorithm": "merge-sort", "values": [5, 2, 9],
+            },
+        },
+    ]
+
+    _assign_merge_sort_phases(scenes)
+
+    assert [scene["visual"]["phase"] for scene in scenes] == [
+        "overview",
+        "merge",
+        "overview",
+    ]
+
+
+def test_assign_merge_sort_phases_preserves_explicit_phases():
+    from app.graph.scene_planner import _assign_merge_sort_phases
+
+    scenes = [
+        {
+            "scene_number": 1,
+            "narration": "This is a generic opening.",
+            "visual": {
+                "type": "array", "algorithm": "merge-sort", "values": [5, 2, 9],
+                "phase": "sorted",
+            },
+        },
+        {
+            "scene_number": 2,
+            "narration": "This is a generic middle.",
+            "visual": {
+                "type": "array", "algorithm": "merge-sort", "values": [5, 2, 9],
+            },
+        },
+    ]
+
+    _assign_merge_sort_phases(scenes)
+
+    assert scenes[0]["visual"]["phase"] == "sorted"
+    assert scenes[1]["visual"]["phase"] == "overview"
+
+
+def test_assign_merge_sort_phases_skips_competing_algorithm_scene():
+    from app.graph.scene_planner import _assign_merge_sort_phases
+
+    scenes = [
+        {
+            "scene_number": 1,
+            "narration": "This is a generic merge sort introduction.",
+            "visual": {
+                "type": "array", "algorithm": "merge-sort", "values": [5, 2, 9],
+            },
+        },
+        {
+            "scene_number": 2,
+            "narration": "Insertion sort builds a sorted prefix.",
+            "visual": {
+                "type": "array", "algorithm": "merge-sort", "values": [5, 2, 9],
+            },
+        },
+        {
+            "scene_number": 3,
+            "narration": "This is another generic merge sort scene.",
+            "visual": {
+                "type": "array", "algorithm": "merge-sort", "values": [5, 2, 9],
+            },
+        },
+    ]
+
+    _assign_merge_sort_phases(scenes)
+
+    assert scenes[0]["visual"]["phase"] == "overview"
+    assert "phase" not in scenes[1]["visual"]
+    assert scenes[2]["visual"]["phase"] == "split"
+
+
+def test_assign_merge_sort_phases_drops_merge_insertion_visual():
+    from app.graph.scene_planner import _assign_merge_sort_phases
+
+    scene = {
+        "scene_number": 1,
+        "narration": (
+            "In computer science, merge-insertion sort or the Ford-Johnson "
+            "algorithm is a comparison sorting algorithm."
+        ),
+        "visual": {
+            "type": "array", "algorithm": "merge-sort", "values": [5, 2, 9],
+        },
+    }
+
+    _assign_merge_sort_phases([scene])
+
+    assert "visual" not in scene
+
+
+def test_assign_merge_sort_phases_keeps_visual_when_concept_only_contrasts_merge_insertion():
+    from app.graph.scene_planner import _assign_merge_sort_phases
+
+    scene = {
+        "scene_number": 1,
+        "narration": "Merge sort is a stable, comparison-based algorithm.",
+        "concept": "Contrast Merge Sort with merge-insertion sort.",
+        "visual": {
+            "type": "array", "algorithm": "merge-sort", "values": [5, 2, 9],
+        },
+    }
+
+    _assign_merge_sort_phases([scene])
+
+    assert scene["visual"]["algorithm"] == "merge-sort"
+    assert scene["visual"]["phase"] == "overview"
+
+
+def test_assign_merge_sort_phases_drops_concept_only_merge_insertion():
+    from app.graph.scene_planner import _assign_merge_sort_phases
+
+    scene = {
+        "scene_number": 1,
+        "narration": "This algorithm is a comparison sorting algorithm.",
+        "concept": "Ford-Johnson merge-insertion sort.",
+        "visual": {
+            "type": "array", "algorithm": "merge-sort", "values": [5, 2, 9],
+        },
+    }
+
+    _assign_merge_sort_phases([scene])
+
+    assert "visual" not in scene
+
+
+def test_merge_sort_scene_gets_phase_when_planner_omits_it(monkeypatch):
+    from app.graph import scene_planner
+
+    plans = [
+        {
+            "concept": "Split",
+            "processKind": "algorithm",
+            "visual": {
+                "type": "array", "algorithm": "merge-sort", "values": [5, 2, 9],
+            },
+        },
+        {
+            "concept": "Merge",
+            "processKind": "algorithm",
+            "visual": {
+                "type": "array", "algorithm": "merge-sort", "values": [5, 2, 9],
+            },
+        },
+        {
+            "concept": "Sorted",
+            "processKind": "algorithm",
+            "visual": {
+                "type": "array", "algorithm": "merge-sort", "values": [5, 2, 9],
+            },
+        },
+        {
+            "concept": "History",
+            "processKind": "algorithm",
+            "visual": {
+                "type": "array", "algorithm": "merge-sort", "values": [5, 2, 9],
+            },
+        },
+    ]
+
+    monkeypatch.setattr(
+        scene_planner,
+        "_call_gemini_planner",
+        lambda scenes, topic: plans,
+    )
+    monkeypatch.setattr(
+        scene_planner,
+        "_validate_with_remotion",
+        lambda specs: [{"ok": True} for _ in specs],
+    )
+
+    result = scene_planner.scene_planner_node({
+        "topic": "merge sort",
+        "category": "cs",
+        "script": (
+            "Merge sort splits the list into halves. "
+            "It merges the sorted halves back together. "
+            "The final array is fully sorted. "
+            "Merge sort was invented by John von Neumann in 1945."
+        ),
+        "approved": True,
+    }, use_gemini_planner=True)
+
+    phases = [scene["visual"]["phase"] for scene in result["scenes"]]
+    assert phases == ["split", "merge", "sorted", "overview"]
+
+
+def test_deterministic_merge_sort_scene_gets_a_phase_without_gemini():
+    from app.graph.scene_planner import scene_planner_node
+
+    scene = scene_planner_node({
+        "topic": "merge sort",
+        "category": "cs",
+        "script": "Merge sort splits the list into halves.",
+        "approved": True,
+    })["scenes"][0]
+
+    assert scene["visual"]["type"] == "array"
+    assert scene["visual"]["algorithm"] == "merge-sort"
+    assert scene["visual"]["phase"] == "split"
+
+
+def test_merge_phase_postpass_leaves_other_array_algorithms_alone():
+    from app.graph.scene_planner import _assign_merge_sort_phases
+
+    scenes = [
+        {
+            "scene_number": 1,
+            "narration": "Bubble sort swaps adjacent values.",
+            "visual": {
+                "type": "array", "algorithm": "bubble-sort", "values": [5, 2, 9],
+            },
+        },
+        {
+            "scene_number": 2,
+            "narration": "Selection sort selects the smallest value.",
+            "visual": {
+                "type": "array", "algorithm": "selection-sort", "values": [5, 2, 9],
+            },
+        },
+        {
+            "scene_number": 3,
+            "narration": "Insertion sort builds a sorted prefix.",
+            "visual": {
+                "type": "array", "algorithm": "insertion-sort", "values": [5, 2, 9],
+            },
+        },
+        {
+            "scene_number": 4,
+            "narration": "Binary search checks the middle value.",
+            "visual": {
+                "type": "array", "algorithm": "binary-search", "values": [5, 2, 9],
+                "target": 5, "phase": "midpoint",
+            },
+        },
+    ]
+
+    _assign_merge_sort_phases(scenes)
+
+    for scene in scenes[:3]:
+        assert "phase" not in scene["visual"]
+    assert scenes[3]["visual"]["phase"] == "midpoint"
+    assert scenes[3]["visual"]["target"] == 5
+
+
+def test_merge_insertion_planner_visual_is_dropped(monkeypatch):
+    from app.graph import scene_planner
+
+    plans = [{
+        "concept": "Ford-Johnson",
+        "processKind": "algorithm",
+        "visual": {
+            "type": "array",
+            "algorithm": "merge-sort",
+            "values": [38, 27, 43, 3, 9, 82, 10],
+        },
+    }]
+    monkeypatch.setattr(
+        scene_planner, "_call_gemini_planner", lambda scenes, topic: plans,
+    )
+    monkeypatch.setattr(
+        scene_planner,
+        "_validate_with_remotion",
+        lambda specs: [{"ok": True} for _ in specs],
+    )
+
+    result = scene_planner.scene_planner_node({
+        "topic": "merge sort",
+        "category": "cs",
+        "script": (
+            "In computer science, merge-insertion sort or the Ford-Johnson "
+            "algorithm is a comparison sorting algorithm."
+        ),
+        "approved": True,
+    }, use_gemini_planner=True)
+
+    assert "visual" not in result["scenes"][0]
+
+
+def test_merge_phase_postpass_does_not_touch_physics_visuals():
+    from app.graph.scene_planner import _assign_merge_sort_phases, scene_planner_node
+
+    scene = scene_planner_node({
+        "topic": "Projectile motion",
+        "category": "physics",
+        "script": "A projectile follows a curved path through the air.",
+        "approved": True,
+    })["scenes"][0]
+    original = scene["visual"]
+    assert original["type"] == "scene-graph"
+
+    _assign_merge_sort_phases([scene])
+    assert scene["visual"] == original
+
+
+def test_deterministic_non_merge_algorithms_never_become_merge_sort():
+    from app.graph.scene_planner import _deterministic_library_visual
+
+    cases = [
+        ("Bubble sort", "Bubble sort swaps adjacent values."),
+        ("Selection sort", "Selection sort finds the smallest value."),
+        ("Insertion sort", "Insertion sort builds a sorted prefix."),
+        ("How binary search works", "Binary search checks the middle value."),
+        (
+            "merge sort",
+            "Insertion sort builds a sorted prefix by shifting values.",
+        ),
+        ("merge sort", "Bubble sort compares adjacent values."),
+        ("merge sort", "Selection sort selects the smallest value."),
+        ("merge sort", "Binary search checks the middle value."),
+    ]
+
+    for topic, narration in cases:
+        visual = _deterministic_library_visual(topic, narration)
+        assert (
+            visual is None or visual.get("algorithm") != "merge-sort"
+        ), narration
+
+    # A contrast scene that explicitly names Merge Sort still belongs to the
+    # Merge Sort topic and keeps its visual.
+    contrast = _deterministic_library_visual(
+        "merge sort",
+        "Insertion sort is simple, but merge sort is more efficient.",
+    )
+    assert contrast is not None
+    assert contrast["algorithm"] == "merge-sort"
+
+
 def test_align_visual_data_reuses_first_merge_sort_values():
     from app.graph.scene_planner import _align_visual_data
 
@@ -1315,7 +1836,7 @@ def test_reuses_topic_visual_for_middle_null_scenes(monkeypatch):
                 "type": "array",
                 "algorithm": "merge-sort",
                 "values": [5, 2, 9],
-                "phase": "midpoint",
+                "phase": "split",
             },
         },
         {"concept": "Properties", "processKind": "algorithm", "visual": None},
@@ -1327,11 +1848,21 @@ def test_reuses_topic_visual_for_middle_null_scenes(monkeypatch):
         "_call_gemini_planner",
         lambda scenes, topic: plans,
     )
+    monkeypatch.setattr(
+        scene_planner,
+        "_validate_with_remotion",
+        lambda specs: [{"ok": True} for _ in specs],
+    )
 
     result = scene_planner.scene_planner_node({
         "topic": "merge sort",
         "category": "cs",
-        "script": "First idea. Second idea. Third idea. Fourth idea.",
+        "script": (
+            "Merge sort splits the list. "
+            "Second idea. "
+            "Merge sort merges the sorted halves. "
+            "Fourth idea."
+        ),
         "approved": True,
     }, use_gemini_planner=True)
 
@@ -1339,13 +1870,15 @@ def test_reuses_topic_visual_for_middle_null_scenes(monkeypatch):
 
     assert "visual" not in scenes[0]
     assert scenes[1]["visual"]["algorithm"] == "merge-sort"
-    assert scenes[1]["visual"]["phase"] == "midpoint"
+    assert scenes[1]["visual"]["phase"] == "split"
 
     reused = scenes[2]["visual"]
     assert reused["type"] == "array"
     assert reused["algorithm"] == "merge-sort"
     assert reused["values"] == [5, 2, 9]
-    assert "phase" not in reused
+    # Reused visuals lose the source phase, then the post-pass derives a
+    # phase that matches this scene's narration.
+    assert reused["phase"] == "merge"
 
     assert "visual" not in scenes[3]
 
@@ -1462,4 +1995,4 @@ def test_reuse_topic_visual_skips_scene_naming_another_algorithm(monkeypatch):
     assert "visual" not in scenes[1]
     assert scenes[2]["visual"]["algorithm"] == "merge-sort"
     assert scenes[2]["visual"]["values"] == [5, 2, 9]
-    assert "phase" not in scenes[2]["visual"]
+    assert scenes[2]["visual"]["phase"] == "merge"

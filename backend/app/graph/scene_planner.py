@@ -1566,6 +1566,102 @@ def _semantic_visual(narration: str) -> dict | None:
         return None
 
 
+_MERGE_SORT_PHASES = frozenset({"overview", "split", "merge", "sorted"})
+_MERGE_INSERTION_RE = re.compile(
+    r"\bmerge[\s-]+insertion\b|\bford[\s\u2013-]+johnson\b",
+    re.IGNORECASE,
+)
+
+
+def _is_merge_insertion_sort(text: str) -> bool:
+    """True for Merge-Insertion / Ford-Johnson, which is not Merge Sort."""
+    return bool(_MERGE_INSERTION_RE.search(text))
+
+
+def _merge_sort_phase(sentence: str) -> str:
+    """Determine the Merge Sort visual phase from a scene's narration.
+
+    The algorithm name alone is not an action: a sentence that merely says
+    "merge sort" stays on the overview. Completed language is checked first so
+    "the result is fully sorted" wins over a nearby "merge" verb.
+    """
+    text = " ".join(sentence.casefold().split())
+    if not text or _is_merge_insertion_sort(text):
+        return "overview"
+
+    if (
+        re.search(
+            r"\b(?:fully|completely|finally|already|now)\s+(?:sorted|ordered)\b",
+            text,
+        )
+        or re.search(
+            r"\b(?:the\s+)?(?:final|finished|completed)\s+"
+            r"(?:array|list|result|output|sequence)\b[^.!?;]{0,24}"
+            r"\b(?:is\s+)?(?:now\s+|fully\s+)?(?:sorted|ordered)\b",
+            text,
+        )
+        or re.search(
+            r"\b(?:the\s+)?result\s+is\s+(?:a\s+|an\s+)?"
+            r"(?:now\s+|fully\s+)?(?:sorted|ordered)\b",
+            text,
+        )
+        or re.search(
+            r"\b(?:array|list|sequence)\s+is\s+"
+            r"(?:now\s+|fully\s+)?(?:sorted|ordered)\b",
+            text,
+        )
+        or re.search(
+            r"\b(?:array|list|sequence)\s+is\s+(?:now\s+)?"
+            r"(?:in\s+)?(?:ascending|descending)\s+order\b",
+            text,
+        )
+    ):
+        return "sorted"
+
+    if (
+        re.search(
+            r"\b(?:are|is|were|was|have\s+been|has\s+been)\s+"
+            r"(?:merged|combined)\b",
+            text,
+        )
+        or re.search(
+            r"\bmerg(?:e|es|ed|ing)\b(?![\s-]+sort\b)[^.!?;]{0,45}"
+            r"\b(?:halves|parts|lists|sub-?arrays|runs|pairs|results|back|together|them)\b",
+            text,
+        )
+        or re.search(
+            r"\bcombin(?:e|es|ed|ing)\b[^.!?;]{0,45}"
+            r"\b(?:halves|parts|lists|sub-?arrays|runs|pairs|results|sorted|them)\b",
+            text,
+        )
+        or re.search(r"\bput(?:s|ting)?\b[^.!?;]{0,24}\bback\s+together\b", text)
+    ):
+        return "merge"
+
+    if (
+        re.search(r"\bsplits?\b|\bsplitting\b", text)
+        or re.search(
+            r"\b(?:divides?|divided|dividing)\b[^.!?;]{0,30}"
+            r"\b(?:list|array|data|elements|sequence|problem|it)\b",
+            text,
+        )
+        or re.search(r"\b(?:halve|halved|halving)\b", text)
+        or re.search(r"\binto\s+(?:two\s+)?halves\b", text)
+        or re.search(r"\bsub-?arrays?\b", text)
+        or re.search(
+            r"\brecursively\s+(?:splits?|divides?|breaks?)\b", text
+        )
+        or re.search(
+            r"\bbreaks?\b[^.!?;]{0,30}"
+            r"\b(?:list|array|data|elements|sequence|halves|parts)\b",
+            text,
+        )
+    ):
+        return "split"
+
+    return "overview"
+
+
 def _binary_search_phase(sentence: str) -> tuple[str, int]:
     """Determine the binary-search visual phase from narration."""
     if any(term in sentence for term in (
@@ -1636,6 +1732,36 @@ def _deterministic_library_visual(
             "phase": phase,
             "footnote": "Illustrative sorted array; indexes start at 0",
         }
+
+    # Merge-Insertion / Ford-Johnson is a different algorithm; never let the
+    # word "merge" (or a "merge sort" topic) select a Merge Sort visual for it.
+    # A Merge Sort topic must not swallow a scene that explicitly discusses a
+    # different algorithm. If the narration also names Merge Sort (a contrast
+    # or comparison scene), keep the Merge Sort visual.
+    scene_algorithms = _named_algorithms(narration)
+    scene_is_explicitly_other = (
+        bool(scene_algorithms - {"merge-sort"})
+        and "merge-sort" not in scene_algorithms
+    )
+
+    merge_insertion = _is_merge_insertion_sort(f"{topic_text} {sentence}")
+    is_merge_sort_topic = (
+        ("merge sort" in topic_text or "merge sort" in sentence)
+        and not merge_insertion
+        and not scene_is_explicitly_other
+        and "binary search" not in topic_text
+    )
+
+    if is_merge_sort_topic:
+        return {
+            "type": "array",
+            "title": "Merge sort",
+            "values": [38, 27, 43, 3, 9, 82, 10],
+            "algorithm": "merge-sort",
+            "phase": _merge_sort_phase(sentence),
+            "footnote": "Illustrative values",
+        }
+
     # More specific database concepts must win over generic table/code matches.
     if "index" in sentence and any(
         term in sentence for term in ("database", "query", "row", "scan")
@@ -2007,6 +2133,7 @@ def _reuse_topic_visuals(
             isinstance(visual, dict)
             and visual.get("type") in _REUSABLE_VISUAL_TYPES
             and visual.get("algorithm", "none") != "none"
+            and not _is_merge_insertion_sort(str(scene.get("narration", "")))
         ):
             source = visual
             break
@@ -2043,6 +2170,84 @@ def _reuse_topic_visuals(
         print(
             f"[visual-planner] scene {scene['scene_number']}: reusing topic visual"
         )
+
+
+def _assign_merge_sort_phases(scenes: list[dict]) -> None:
+    """Ensure Merge Sort scenes have a phase derived from their narration.
+
+    Reused topic visuals deliberately drop the source phase. Gemini also omits
+    the optional phase in practice, so this post-pass is the single place that
+    guarantees a scene-specific stage. Invalid phases (for example a
+    binary-search phase on a Merge Sort visual) are replaced rather than left
+    to the renderer's all-frames fallback.
+
+    Merge-Insertion / Ford-Johnson scenes must not keep a Merge Sort visual at
+    all; that algorithm is a different topic and would be taught incorrectly.
+
+    If no scene yields a reliable non-overview phase, a deterministic editorial
+    plan supplies phase diversity. That plan is NOT a claim that the narration
+    describes the assigned stage; it exists only so a generic Merge Sort video
+    does not render the same overview panel in every scene.
+    """
+    eligible_for_fallback: list[dict] = []
+    has_phase_evidence = False
+
+    for scene in scenes:
+        visual = scene.get("visual")
+        if not isinstance(visual, dict):
+            continue
+        if visual.get("type") != "array" or visual.get("algorithm") != "merge-sort":
+            continue
+
+        narration = str(scene.get("narration", ""))
+        concept = str(scene.get("concept", ""))
+        narration_merge_insertion = _is_merge_insertion_sort(narration)
+        narration_merge_sort = "merge-sort" in _named_algorithms(narration)
+        concept_merge_insertion = _is_merge_insertion_sort(concept)
+
+        # The narration is authoritative. A concept that mentions
+        # Merge-Insertion only as a comparison must not delete a legitimate
+        # Merge Sort visual; without Merge Sort in the narration, keep the
+        # conservative drop for an otherwise ambiguous Merge-Insertion scene.
+        if narration_merge_insertion or (
+            concept_merge_insertion and not narration_merge_sort
+        ):
+            scene.pop("visual", None)
+            print(
+                f"[visual-planner] scene {scene['scene_number']}: "
+                "dropped Merge Sort visual for Merge-Insertion Sort"
+            )
+            continue
+
+        phase = visual.get("phase")
+        if phase in _MERGE_SORT_PHASES:
+            if phase != "overview":
+                has_phase_evidence = True
+            continue
+
+        # A scene that explicitly discusses another algorithm must not receive
+        # an editorial Merge Sort phase from the topic-level fallback.
+        narration_algorithms = _named_algorithms(narration)
+        if (
+            narration_algorithms - {"merge-sort"}
+            and "merge-sort" not in narration_algorithms
+        ):
+            continue
+
+        inferred = _merge_sort_phase(narration)
+        visual["phase"] = inferred
+        eligible_for_fallback.append(scene)
+        if inferred != "overview":
+            has_phase_evidence = True
+
+    if has_phase_evidence:
+        return
+
+    # All eligible scenes were generic overviews. Use a stable editorial plan
+    # rather than pretending the narration supports a particular stage.
+    fallback_plan = ("overview", "split", "merge", "sorted")
+    for index, scene in enumerate(eligible_for_fallback):
+        scene["visual"]["phase"] = fallback_plan[index % len(fallback_plan)]
 
 
 def scene_planner_node(
@@ -2165,5 +2370,9 @@ def scene_planner_node(
                         scene["visual"] = original
 
         _reuse_topic_visuals(scenes, planner_results, topic)
+
+    # Apply to planner, fallback, and reused visuals alike. This is what makes
+    # the stored phase independent of whether Gemini remembered to emit one.
+    _assign_merge_sort_phases(scenes)
 
     return {"scenes": scenes}

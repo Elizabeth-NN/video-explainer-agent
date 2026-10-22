@@ -24,6 +24,11 @@ import {
   Footnote,
   ACCENTS,
 } from "./visuals/kit";
+import {
+  isMergeInsertionSort,
+  isMergeSortPhase,
+  mergeSortPhaseFromNarration,
+} from "./visuals/algorithms";
 /* ──────────────────────────────────────────────────────────────
    Types
    ────────────────────────────────────────────────────────────── */
@@ -1225,6 +1230,24 @@ const physicsFallbackSpec = (
   };
 };
 
+/** Other algorithms that must not be replaced by a topic-level Merge Sort fallback. */
+const COMPETING_ALGORITHM_RE =
+  /\b(?:insertion|bubble|selection)[\s-]+sort\b|\bbinary[\s-]+search\b|\bmerge[\s-]+insertion\b|\bford[\s\u2013-]+johnson\b/i;
+
+const allowsMergeSortFallback = (
+  scene: ExplainerScene,
+  topic: string,
+): boolean => {
+  const sceneText = `${scene.narration} ${scene.visualDescription || ""}`;
+  if (isMergeInsertionSort(sceneText)) return false;
+
+  const sceneMentionsMergeSort = /\bmerge[\s-]+sort\b/i.test(sceneText);
+  if (sceneMentionsMergeSort) return true;
+
+  const sceneMentionsOther = COMPETING_ALGORITHM_RE.test(sceneText);
+  return /\bmerge[\s-]+sort\b/i.test(topic) && !sceneMentionsOther;
+};
+
 /** CS fallback for legacy or invalid planned visuals. */
 const csFallbackSpec = (
   scene: ExplainerScene,
@@ -1259,6 +1282,20 @@ const csFallbackSpec = (
       algorithm: "binary-search",
       target,
       phase,
+    };
+  }
+
+  // Merge-Insertion / Ford-Johnson is a different algorithm, and a scene that
+  // explicitly discusses another algorithm must not inherit the Merge Sort
+  // topic visual. A contrast scene that names both still keeps Merge Sort.
+  if (allowsMergeSortFallback(scene, topic)) {
+    return {
+      type: "array",
+      title: "Merge Sort",
+      values: [38, 27, 43, 3, 9, 82, 10],
+      algorithm: "merge-sort",
+      phase: mergeSortPhaseFromNarration(scene.narration),
+      footnote: "Illustrative values",
     };
   }
 
@@ -1630,9 +1667,35 @@ export const resolveVisualSpec = (
   category?: "cs" | "physics",
 ): VisualSpec => {
   const planned = resolveVisual(scene.visual);
-  if (planned) return planned;
+  let rejectedMergeInsertion = false;
 
-  if (scene.visual) console.warn(`[visual] scene ${scene.sceneNumber}: invalid visual, using legacy routing`);
+  if (planned) {
+    if (planned.type === "array" && planned.algorithm === "merge-sort") {
+      // Old manifests have no phase. Repair them at render time so the
+      // existing input-props.json does not need a backend rerun.
+      if (
+        isMergeInsertionSort(
+          `${scene.narration} ${scene.visualDescription || ""}`,
+        )
+      ) {
+        rejectedMergeInsertion = true;
+        console.warn(
+          `[visual] scene ${scene.sceneNumber}: ignoring Merge Sort visual for Merge-Insertion Sort`,
+        );
+      } else {
+        const phase = isMergeSortPhase(planned.phase)
+          ? planned.phase
+          : mergeSortPhaseFromNarration(scene.narration);
+        return { ...planned, phase };
+      }
+    } else {
+      return planned;
+    }
+  }
+
+  if (scene.visual && !rejectedMergeInsertion) {
+    console.warn(`[visual] scene ${scene.sceneNumber}: invalid visual, using legacy routing`);
+  }
   // ── LEGACY: delete once planner output matches or beats it ──
   const sceneText = `${scene.narration} ${scene.visualDescription || ""}`;
   const pick = pickIllustration(topic, sceneText);

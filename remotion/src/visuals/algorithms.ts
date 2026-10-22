@@ -24,6 +24,67 @@ export type ArrayFrame = {
   stage?: "start" | "split" | "merge" | "sorted";
 };
 
+export type MergeSortPhase = "overview" | "split" | "merge" | "sorted";
+
+export const MERGE_SORT_PHASES: readonly MergeSortPhase[] = [
+  "overview", "split", "merge", "sorted",
+];
+
+export const isMergeSortPhase = (value: unknown): value is MergeSortPhase =>
+  typeof value === "string" &&
+  (MERGE_SORT_PHASES as readonly string[]).includes(value);
+
+const MERGE_INSERTION_RE =
+  /\bmerge[\s-]+insertion\b|\bford[\s\u2013-]+johnson\b/i;
+
+/** Merge-Insertion / Ford-Johnson is not Merge Sort. */
+export const isMergeInsertionSort = (text: string): boolean =>
+  MERGE_INSERTION_RE.test(text);
+
+/**
+ * Infer the Merge Sort stage from narration. This is deliberately shared by the
+ * renderer and mirrored in the backend so old manifests can be repaired without
+ * a rerun. A bare mention of "merge sort" is an overview, not a merge action.
+ */
+export const mergeSortPhaseFromNarration = (text: string): MergeSortPhase => {
+  const s = text.toLowerCase().replace(/\s+/g, " ").trim();
+  if (!s || isMergeInsertionSort(s)) return "overview";
+
+  if (
+    /\b(?:fully|completely|finally|already|now)\s+(?:sorted|ordered)\b/.test(s) ||
+    /\b(?:the\s+)?(?:final|finished|completed)\s+(?:array|list|result|output|sequence)\b[^.!?;]{0,24}\b(?:is\s+)?(?:now\s+|fully\s+)?(?:sorted|ordered)\b/.test(s) ||
+    /\b(?:the\s+)?result\s+is\s+(?:a\s+|an\s+)?(?:now\s+|fully\s+)?(?:sorted|ordered)\b/.test(s) ||
+    /\b(?:array|list|sequence)\s+is\s+(?:now\s+|fully\s+)?(?:sorted|ordered)\b/.test(s) ||
+    /\b(?:array|list|sequence)\s+is\s+(?:now\s+)?(?:in\s+)?(?:ascending|descending)\s+order\b/.test(s)
+  ) {
+    return "sorted";
+  }
+
+  if (
+    /\b(?:are|is|were|was|have\s+been|has\s+been)\s+(?:merged|combined)\b/.test(s) ||
+    /\bmerg(?:e|es|ed|ing)\b(?![\s-]+sort\b)[^.!?;]{0,45}\b(?:halves|parts|lists|sub-?arrays|runs|pairs|results|back|together|them)\b/.test(s) ||
+    /\bcombin(?:e|es|ed|ing)\b[^.!?;]{0,45}\b(?:halves|parts|lists|sub-?arrays|runs|pairs|results|sorted|them)\b/.test(s) ||
+    /\bput(?:s|ting)?\b[^.!?;]{0,24}\bback\s+together\b/.test(s)
+  ) {
+    return "merge";
+  }
+
+  if (
+    /\bsplits?\b|\bsplitting\b/.test(s) ||
+    /\b(?:divides?|divided|dividing)\b[^.!?;]{0,30}\b(?:list|array|data|elements|sequence|problem|it)\b/.test(s) ||
+    /\b(?:halve|halved|halving)\b/.test(s) ||
+    /\binto\s+(?:two\s+)?halves\b/.test(s) ||
+    /\bsub-?arrays?\b/.test(s) ||
+    /\brecursively\s+(?:splits?|divides?|breaks?)\b/.test(s) ||
+    /\bbreaks?\b[^.!?;]{0,30}\b(?:list|array|data|elements|sequence|halves|parts)\b/.test(s)
+  ) {
+    return "split";
+  }
+
+  return "overview";
+};
+
+
 export const bubbleSort = (input: number[]): ArrayFrame[] => {
   const a = [...input];
   const n = a.length;
@@ -130,6 +191,172 @@ export const mergeSort = (input: number[]): ArrayFrame[] => {
   sort(0, a.length - 1);
   frames.push({ values: [...a], done: a.map((_, i) => i), note: "Sorted", stage: "sorted" });
   return frames;
+};
+
+/* ───────────── merge sort story ───────────── */
+
+export type MergeSortNode = {
+  lo: number;
+  hi: number;
+  depth: number;
+  values: number[];
+  mid?: number;
+  children?: [MergeSortNode, MergeSortNode];
+};
+
+export type MergeSortSplit = {
+  lo: number;
+  hi: number;
+  mid: number;
+  depth: number;
+  left: number[];
+  right: number[];
+};
+
+export type MergeSortStep =
+  | {
+      kind: "compare";
+      i: number;
+      j: number;
+      leftValue: number;
+      rightValue: number;
+      take: "left" | "right";
+      k: number;
+      output: number[];
+    }
+  | {
+      kind: "take-left" | "take-right";
+      i: number;
+      j: number;
+      value: number;
+      k: number;
+      output: number[];
+    }
+  | {
+      kind: "append-left" | "append-right";
+      index: number;
+      value: number;
+      k: number;
+      output: number[];
+    };
+
+export type MergeSortPass = {
+  lo: number;
+  hi: number;
+  mid: number;
+  depth: number;
+  left: number[];
+  right: number[];
+  steps: MergeSortStep[];
+  output: number[];
+};
+
+export type MergeSortStory = {
+  input: number[];
+  sorted: number[];
+  tree: MergeSortNode;
+  splits: MergeSortSplit[];
+  merges: MergeSortPass[];
+};
+
+/**
+ * Build a complete, renderer-friendly Merge Sort story: the recursion tree,
+ * every split, and every merge action (compare, take, and remainder append).
+ *
+ * `mergeSort` stays as the compact legacy trace used by `arrayTrace` and the
+ * existing tests. This function is the source of truth for the dedicated
+ * split/merge views and deliberately uses the same stable `<=` rule.
+ */
+export const buildMergeSortStory = (input: number[]): MergeSortStory => {
+  const a = [...input];
+  const splits: MergeSortSplit[] = [];
+  const merges: MergeSortPass[] = [];
+
+  const sort = (lo: number, hi: number, depth: number): MergeSortNode => {
+    const values = a.slice(lo, hi + 1);
+    if (lo >= hi) return { lo, hi, depth, values };
+
+    const mid = Math.floor((lo + hi) / 2);
+    const node: MergeSortNode = { lo, hi, depth, values, mid };
+    splits.push({
+      lo,
+      hi,
+      mid,
+      depth,
+      left: values.slice(0, mid - lo + 1),
+      right: values.slice(mid - lo + 1),
+    });
+
+    node.children = [
+      sort(lo, mid, depth + 1),
+      sort(mid + 1, hi, depth + 1),
+    ];
+
+    // Both children are sorted now. Copy the runs before writing into `a`, so
+    // an output write never overwrites a value that has not been read yet.
+    const left = a.slice(lo, mid + 1);
+    const right = a.slice(mid + 1, hi + 1);
+    const steps: MergeSortStep[] = [];
+    let i = 0;
+    let j = 0;
+    let k = lo;
+
+    while (i < left.length && j < right.length) {
+      const leftValue = left[i];
+      const rightValue = right[j];
+      const take = leftValue <= rightValue ? "left" : "right";
+      steps.push({
+        kind: "compare",
+        i,
+        j,
+        leftValue,
+        rightValue,
+        take,
+        k,
+        output: [...a],
+      });
+
+      if (take === "left") {
+        a[k] = leftValue;
+        steps.push({
+          kind: "take-left", i, j, value: leftValue, k, output: [...a],
+        });
+        i++;
+      } else {
+        a[k] = rightValue;
+        steps.push({
+          kind: "take-right", i, j, value: rightValue, k, output: [...a],
+        });
+        j++;
+      }
+      k++;
+    }
+
+    while (i < left.length) {
+      a[k] = left[i];
+      steps.push({
+        kind: "append-left", index: i, value: left[i], k, output: [...a],
+      });
+      i++;
+      k++;
+    }
+    while (j < right.length) {
+      a[k] = right[j];
+      steps.push({
+        kind: "append-right", index: j, value: right[j], k, output: [...a],
+      });
+      j++;
+      k++;
+    }
+
+    merges.push({
+      lo, hi, mid, depth, left, right, steps, output: [...a],
+    });
+    return node;
+  };
+
+  const tree = sort(0, a.length - 1, 0);
+  return { input: [...input], sorted: [...a], tree, splits, merges };
 };
 
 /** Binary search needs sorted input, so the array is sorted first (and says so). */

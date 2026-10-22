@@ -1,0 +1,32 @@
+{
+  "topic": "Fixture: array-merge-sorted",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Fixture visual: array-merge-sorted",
+      "visualDescription": "",
+      "audioFile": "silence.wav",
+      "durationInFrames": 300,
+      "from": 0,
+      "visual": {
+        "type": "array",
+        "title": "Merge sort: sorted",
+        "values": [
+          38,
+          27,
+          43,
+          3,
+          9,
+          82,
+          10
+        ],
+        "algorithm": "merge-sort",
+        "phase": "sorted",
+        "footnote": "Illustrative values"
+      }
+    }
+  ]
+}

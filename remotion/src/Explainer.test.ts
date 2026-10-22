@@ -171,3 +171,167 @@ test("binary-search failure narration selects an absent target", () => {
   assert.equal(spec.phase, "not-found");
   assert.equal(spec.target, 26);
 });
+
+test("planned merge-sort visual gets a phase from narration", () => {
+  const planned = {
+    type: "array" as const,
+    title: "Merge sort",
+    values: [38, 27, 43, 3, 9, 82, 10],
+    algorithm: "merge-sort" as const,
+  };
+
+  const spec = resolveVisualSpec(
+    makeScene("Merge sort splits the list into halves.", "", planned),
+    "merge sort",
+    "cs",
+  );
+
+  assert.equal(spec.type, "array");
+  if (spec.type !== "array") assert.fail("Expected an array visual.");
+  assert.equal(spec.algorithm, "merge-sort");
+  assert.equal(spec.phase, "split");
+});
+
+test("invalid merge-sort phase is repaired from narration", () => {
+  const planned = {
+    type: "array" as const,
+    values: [38, 27, 43, 3, 9, 82, 10],
+    algorithm: "merge-sort" as const,
+    phase: "midpoint" as const,
+  };
+
+  const spec = resolveVisualSpec(
+    makeScene("It merges the sorted halves back together.", "", planned),
+    "merge sort",
+    "cs",
+  );
+
+  assert.equal(spec.type, "array");
+  if (spec.type !== "array") assert.fail("Expected an array visual.");
+  assert.equal(spec.phase, "merge");
+});
+
+test("valid merge-sort phase is preserved", () => {
+  const planned = {
+    type: "array" as const,
+    values: [38, 27, 43, 3, 9, 82, 10],
+    algorithm: "merge-sort" as const,
+    phase: "sorted" as const,
+  };
+
+  const spec = resolveVisualSpec(
+    makeScene("Merge sort is a divide-and-conquer algorithm.", "", planned),
+    "merge sort",
+    "cs",
+  );
+
+  assert.equal(spec.type, "array");
+  if (spec.type !== "array") assert.fail("Expected an array visual.");
+  assert.equal(spec.phase, "sorted");
+});
+
+test("prepared merge-sort phases survive into the resolved renderer spec", () => {
+  const phases = ["overview", "split", "merge", "sorted"] as const;
+
+  for (const phase of phases) {
+    const spec = resolveVisualSpec(
+      makeScene("Generic merge sort narration.", "", {
+        type: "array",
+        values: [38, 27, 43, 3, 9, 82, 10],
+        algorithm: "merge-sort",
+        phase,
+      }),
+      "merge sort",
+      "cs",
+    );
+
+    assert.equal(spec.type, "array");
+    if (spec.type !== "array") assert.fail("Expected an array visual.");
+    assert.equal(spec.phase, phase);
+  }
+});
+
+test("merge-sort narration gets an array fallback before the generic CS fallback", () => {
+  const spec = resolveVisualSpec(
+    makeScene("Merge sort merges the sorted halves back together."),
+    "merge sort",
+    "cs",
+  );
+
+  assert.equal(spec.type, "array");
+  if (spec.type !== "array") assert.fail("Expected an array visual.");
+  assert.equal(spec.algorithm, "merge-sort");
+  assert.equal(spec.phase, "merge");
+});
+
+test("Merge-Insertion narration does not receive a Merge Sort visual", () => {
+  const planned = {
+    type: "array" as const,
+    values: [38, 27, 43, 3, 9, 82, 10],
+    algorithm: "merge-sort" as const,
+  };
+  const narration = (
+    "In computer science, merge-insertion sort or the Ford-Johnson "
+    + "algorithm is a comparison sorting algorithm."
+  );
+
+  const withPlanned = resolveVisualSpec(
+    makeScene(narration, "", planned),
+    "merge sort",
+    "cs",
+  );
+  assert.ok(
+    withPlanned.type !== "array" || withPlanned.algorithm !== "merge-sort",
+    "planned Merge Sort must be rejected for Merge-Insertion",
+  );
+
+  const fallback = resolveVisualSpec(makeScene(narration), "merge sort", "cs");
+  assert.ok(
+    fallback.type !== "array" || fallback.algorithm !== "merge-sort",
+    "fallback must not select Merge Sort for Merge-Insertion",
+  );
+});
+
+test("merge-sort topic does not override another algorithm's scene", () => {
+  const cases = [
+    "Insertion sort builds a sorted prefix by shifting values.",
+    "Bubble sort compares adjacent values.",
+    "Selection sort selects the smallest value.",
+    "Binary search checks the middle value.",
+  ];
+
+  for (const narration of cases) {
+    const spec = resolveVisualSpec(makeScene(narration), "merge sort", "cs");
+    assert.ok(
+      spec.type !== "array" || spec.algorithm !== "merge-sort",
+      `fallback must not replace this scene: ${narration}`,
+    );
+  }
+});
+
+test("merge-sort contrast scene that names Merge Sort keeps its visual", () => {
+  const spec = resolveVisualSpec(
+    makeScene("Insertion sort is simple, but merge sort is more efficient."),
+    "merge sort",
+    "cs",
+  );
+
+  assert.equal(spec.type, "array");
+  if (spec.type !== "array") assert.fail("Expected an array visual.");
+  assert.equal(spec.algorithm, "merge-sort");
+});
+
+test("physics fallback still wins over the Merge Sort CS fallback", () => {
+  const spec = resolveVisualSpec(
+    makeScene(
+      "A net force causes an object to accelerate while the data is sorting.",
+    ),
+    "Physics fundamentals",
+    "physics",
+  );
+
+  assert.ok(
+    spec.type !== "array" || spec.algorithm !== "merge-sort",
+    "physics scenes must not receive the CS Merge Sort fallback",
+  );
+});

@@ -5,6 +5,10 @@
 export const FIXTURES: Record<string, unknown> = {
   array: { type: "array", title: "Bubble sort", values: [5, 2, 9, 1, 7, 3], algorithm: "bubble-sort", footnote: "Large values bubble to the end" },
   "array-search": { type: "array", title: "Binary search", values: [3, 8, 12, 19, 25, 31, 42], algorithm: "binary-search", target: 25 },
+  "array-merge-overview": { type: "array", title: "Merge sort", values: [38, 27, 43, 3, 9, 82, 10], algorithm: "merge-sort", phase: "overview", footnote: "Illustrative values" },
+  "array-merge-split": { type: "array", title: "Merge sort: split", values: [38, 27, 43, 3, 9, 82, 10], algorithm: "merge-sort", phase: "split", footnote: "Illustrative values" },
+  "array-merge-merge": { type: "array", title: "Merge sort: merge", values: [38, 27, 43, 3, 9, 82, 10], algorithm: "merge-sort", phase: "merge", footnote: "Illustrative values" },
+  "array-merge-sorted": { type: "array", title: "Merge sort: sorted", values: [38, 27, 43, 3, 9, 82, 10], algorithm: "merge-sort", phase: "sorted", footnote: "Illustrative values" },
   tree: { type: "tree", title: "Inserting into a BST", values: [8, 3, 10, 1, 6, 14, 4], algorithm: "insert" },
   "tree-traversal": { type: "tree", title: "In-order traversal", values: [8, 3, 10, 1, 6, 14, 4], algorithm: "inorder" },
   chain: { type: "chain", title: "A stack", kind: "stack", values: [4, 7, 2], ops: [{ op: "pop" }, { op: "push", value: 9 }] },

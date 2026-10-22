@@ -1,0 +1,96 @@
+{
+  "topic": "How the human heart pumps blood",
+  "fps": 24,
+  "width": 1280,
+  "height": 720,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "narration": "Imagine exploring How the human heart pumps blood and discovering how it works.",
+      "visualDescription": "Physics illustration focused on the physical quantities and relationships explained. Show only quantities, vectors, trajectories, and relationships supported by the topic and narration. Scene narration: Imagine exploring How the human heart pumps blood and discovering how it works. Avoid invented numerical values or unsupported assumptions.",
+      "audioFile": "audio/scene_001.mp3",
+      "durationInFrames": 124,
+      "from": 0
+    },
+    {
+      "sceneNumber": 2,
+      "narration": "The key is to understand the evidence behind How the human heart pumps blood.",
+      "visualDescription": "Physics illustration focused on the physical quantities and relationships explained. Show only quantities, vectors, trajectories, and relationships supported by the topic and narration. Scene narration: The key is to understand the evidence behind How the human heart pumps blood. Avoid invented numerical values or unsupported assumptions.",
+      "audioFile": "audio/scene_002.mp3",
+      "durationInFrames": 112,
+      "from": 124
+    },
+    {
+      "sceneNumber": 3,
+      "narration": "Start with the main process and the details that explain it.",
+      "visualDescription": "Physics illustration focused on the physical quantities and relationships explained. Show only quantities, vectors, trajectories, and relationships supported by the topic and narration. Scene narration: Start with the main process and the details that explain it. Avoid invented numerical values or unsupported assumptions.",
+      "audioFile": "audio/scene_003.mp3",
+      "durationInFrames": 98,
+      "from": 236
+    },
+    {
+      "sceneNumber": 4,
+      "narration": "The heart is a muscular organ situated in the mediastinum.",
+      "visualDescription": "Physics illustration focused on the physical quantities and relationships explained. Show only quantities, vectors, trajectories, and relationships supported by the topic and narration. Scene narration: The heart is a muscular organ situated in the mediastinum. Avoid invented numerical values or unsupported assumptions.",
+      "audioFile": "audio/scene_004.mp3",
+      "durationInFrames": 97,
+      "from": 334
+    },
+    {
+      "sceneNumber": 5,
+      "narration": "It consists of four chambers, four valves, two main arteries, and the conduction system.",
+      "visualDescription": "Physics illustration focused on the physical quantities and relationships explained. Show only quantities, vectors, trajectories, and relationships supported by the topic and narration. Scene narration: It consists of four chambers, four valves, two main arteries, and the conduction system. Avoid invented numerical values or unsupported assumptions.",
+      "audioFile": "audio/scene_005.mp3",
+      "durationInFrames": 152,
+      "from": 431
+    },
+    {
+      "sceneNumber": 6,
+      "narration": "The left and right sides of the heart have different functions: the right side receives de-oxygenated blood through the superior and inferior venae cavae and pumps blood to the lungs through the",
+      "visualDescription": "Physics illustration focused on the physical quantities and relationships explained. Show only quantities, vectors, trajectories, and relationships supported by the topic and narration. Scene narration: The left and right sides of the heart have different functions: the right side receives de-oxygenated blood through the superior and inferior venae cavae and pumps blood to the lungs through the Avoid invented numerical values or unsupported assumptions.",
+      "audioFile": "audio/scene_006.mp3",
+      "durationInFrames": 264,
+      "from": 583
+    },
+    {
+      "sceneNumber": 7,
+      "narration": "pulmonary artery, and the left side receives saturated blood from the lungs.",
+      "visualDescription": "Physics illustration focused on the physical quantities and relationships explained. Show only quantities, vectors, trajectories, and relationships supported by the topic and narration. Scene narration: pulmonary artery, and the left side receives saturated blood from the lungs. Avoid invented numerical values or unsupported assumptions.",
+      "audioFile": "audio/scene_007.mp3",
+      "durationInFrames": 128,
+      "from": 847
+    },
+    {
+      "sceneNumber": 8,
+      "narration": "The atrium is one of the two upper chambers in the heart that receives blood from the circulatory system.",
+      "visualDescription": "Physics illustration focused on the physical quantities and relationships explained. Show only quantities, vectors, trajectories, and relationships supported by the topic and narration. Scene narration: The atrium is one of the two upper chambers in the heart that receives blood from the circulatory system. Avoid invented numerical values or unsupported assumptions.",
+      "audioFile": "audio/scene_008.mp3",
+      "durationInFrames": 147,
+      "from": 975
+    },
+    {
+      "sceneNumber": 9,
+      "narration": "The blood in the atria is pumped into the heart ventricles through the atrioventricular mitral and tricuspid heart valves.",
+      "visualDescription": "Physics illustration focused on the physical quantities and relationships explained. Show only quantities, vectors, trajectories, and relationships supported by the topic and narration. Scene narration: The blood in the atria is pumped into the heart ventricles through the atrioventricular mitral and tricuspid heart valves. Avoid invented numerical values or unsupported assumptions.",
+      "audioFile": "audio/scene_009.mp3",
+      "durationInFrames": 172,
+      "from": 1122
+    },
+    {
+      "sceneNumber": 10,
+      "narration": "Interventricular means between the ventricles, while intraventricular means within one ventricle.",
+      "visualDescription": "Physics illustration focused on the physical quantities and relationships explained. Show only quantities, vectors, trajectories, and relationships supported by the topic and narration. Scene narration: Interventricular means between the ventricles, while intraventricular means within one ventricle. Avoid invented numerical values or unsupported assumptions.",
+      "audioFile": "audio/scene_010.mp3",
+      "durationInFrames": 146,
+      "from": 1294
+    },
+    {
+      "sceneNumber": 11,
+      "narration": "These details connect the main ideas and show how the process works, while keeping the explanation grounded in the available evidence.",
+      "visualDescription": "Physics illustration focused on the physical quantities and relationships explained. Show only quantities, vectors, trajectories, and relationships supported by the topic and narration. Scene narration: These details connect the main ideas and show how the process works, while keeping the explanation grounded in the available evidence. Avoid invented numerical values or unsupported assumptions.",
+      "audioFile": "audio/scene_011.mp3",
+      "durationInFrames": 194,
+      "from": 1440
+    }
+  ]
+}
