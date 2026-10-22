@@ -21,6 +21,7 @@ from app.graph.scene_planner import (
     _BINARY_SEARCH_PHASES,
     _assign_binary_search_phases,
     _named_algorithms,
+    _repair_binary_search_visuals,
 )
 from prepare_merge_sort_props import (
     DEFAULT_INPUT_PROPS,
@@ -70,9 +71,15 @@ def _skipped_competing_scenes(manifest: dict[str, Any]) -> list[tuple[int, str]]
 def build_binary_search_props(
     manifest: dict[str, Any], manifest_dir: Path
 ) -> dict[str, Any]:
-    return build_remotion_props(
-        manifest, manifest_dir, _assign_binary_search_phases
-    )
+    """Repair eligible visuals and assign phases on copied manifest scenes."""
+    topic = str(manifest.get("topic", ""))
+    category = str(manifest.get("category", "cs"))
+
+    def prepare_scenes(scenes: list[dict]) -> None:
+        _repair_binary_search_visuals(scenes, topic, category)
+        _assign_binary_search_phases(scenes)
+
+    return build_remotion_props(manifest, manifest_dir, prepare_scenes)
 
 
 def validate_binary_search_job(

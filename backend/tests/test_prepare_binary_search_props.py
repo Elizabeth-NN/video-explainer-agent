@@ -78,8 +78,9 @@ def test_binary_search_props_assign_and_preserve(tmp_path: Path):
     assert props["scenes"][2]["visual"]["phase"] == "found"
     assert props["scenes"][1]["visual"]["target"] == 25
     assert props["scenes"][2]["visual"]["target"] == 8
-    assert "visual" not in props["scenes"][0]
-    assert "visual" not in props["scenes"][4]
+    assert props["scenes"][0]["visual"]["algorithm"] == "binary-search"
+    assert props["scenes"][4]["visual"]["algorithm"] == "binary-search"
+    # A scene explicitly discussing Bubble Sort must remain untouched.
     assert props["scenes"][3]["visual"]["algorithm"] == "bubble-sort"
 
     validate_binary_search_job(props, manifest, tmp_path)
@@ -124,10 +125,38 @@ def test_competing_algorithm_is_reported_as_skipped(tmp_path: Path):
     ]
 
 
-def test_no_binary_search_visuals_is_rejected(tmp_path: Path):
+def test_conflicting_visual_is_repaired_without_mutating_manifest(
+    tmp_path: Path,
+):
+    manifest = make_manifest(tmp_path)
+    scene = manifest["scenes"][4]
+    scene["visual"] = {
+        "type": "array",
+        "values": [5, 2, 9],
+        "algorithm": "bubble-sort",
+    }
+    original_visual = json.loads(json.dumps(scene["visual"]))
+
+    props = build_binary_search_props(manifest, tmp_path)
+
+    assert props["scenes"][4]["visual"]["algorithm"] == "binary-search"
+    assert scene["visual"] == original_visual
+
+
+def test_competing_algorithm_scene_is_preserved(tmp_path: Path):
+    manifest = make_manifest(tmp_path)
+    original_visual = json.loads(json.dumps(manifest["scenes"][3]["visual"]))
+
+    props = build_binary_search_props(manifest, tmp_path)
+
+    assert props["scenes"][3]["visual"] == original_visual
+
+
+def test_no_eligible_binary_search_visuals_is_rejected(tmp_path: Path):
     manifest = make_manifest(tmp_path)
     for scene in manifest["scenes"]:
         scene.pop("visual", None)
+        scene["narration"] = "Bubble sort compares adjacent values."
 
     props = build_binary_search_props(manifest, tmp_path)
     with pytest.raises(ValueError, match="no usable Binary Search"):
