@@ -1,5 +1,6 @@
 /** Run: npx tsx src/visuals/algorithm_check.ts   (exits non-zero on failure) */
 import assert from "node:assert/strict";
+import { arrayTrace } from "./array";
 import {
   binarySearch, bubbleSort, buildBst, chainTrace, graphTrace, insertionSort,
   linearSearch, mergeSort, selectionSort, traversalOrder, treeTrace,
@@ -25,6 +26,41 @@ assert.deepEqual(last(mergeSort(input)).values, sorted, "merge sort result");
 // -0 and 0 are equal under <= but distinct under Object.is, so a stable merge
 // keeps the original -0 first; an unstable one would emit [0, -0].
 assert.deepEqual(last(mergeSort([-0, 0])).values, [-0, 0], "merge sort is stable on equal values");
+
+const mergeFrames = mergeSort(input);
+assert.equal(mergeFrames[0].stage, "start", "merge sort starts with a start frame");
+assert.equal(last(mergeFrames).stage, "sorted", "merge sort ends with a sorted frame");
+
+const mergePhaseStages = {
+  overview: "start",
+  split: "split",
+  merge: "merge",
+  sorted: "sorted",
+} as const;
+for (const phase of Object.keys(mergePhaseStages) as (keyof typeof mergePhaseStages)[]) {
+  const stage = mergePhaseStages[phase];
+  const frames = arrayTrace({
+    type: "array",
+    values: input,
+    algorithm: "merge-sort",
+    phase,
+  });
+  assert.ok(frames.length > 0, `merge sort ${phase} phase returns frames`);
+  assert.ok(
+    frames.every((frame) => frame.stage === stage),
+    `merge sort ${phase} phase returns only ${stage} frames`,
+  );
+}
+assert.equal(
+  arrayTrace({
+    type: "array",
+    values: input,
+    algorithm: "merge-sort",
+    phase: "midpoint",
+  }).length,
+  mergeFrames.length,
+  "merge sort falls back to all frames when no stage matches",
+);
 
 const t = buildBst([8, 3, 10, 1, 6, 14, 4]);
 assert.deepEqual(traversalOrder(t, "inorder"), [1, 3, 4, 6, 8, 10, 14], "inorder is sorted");

@@ -285,8 +285,9 @@ Rules:
 - Never write algorithm steps or query results. Supply inputs only; the renderer computes the steps.
 - Choose per scene from the concept. Use the topic to keep inputs consistent across scenes, but choose each visual from that scene's concept.
 - When consecutive scenes explain the same algorithm or structure, reuse the same visual type and the same input values, varying only phase or operations.
+- When several scenes use the same algorithm visual, give each a different phase that matches what its narration says: overview for introductions, split for dividing the list, merge for combining sorted parts, sorted for the finished result. Don't use the same phase for more than two scenes.
 - If the topic is a named algorithm or data structure that has a matching library visual, use that visual for every scene that describes how it works, including scenes that don't repeat the algorithm's name (for example scenes about splitting, merging, comparing, ordering or stability). Use the same input values in each of those scenes.
-- Return null only if the scene has no connection to the video's topic. If the topic is a named algorithm or data structure with a matching library visual and the scene discusses that algorithm, its properties (stable, efficient, comparison-based), its variants, or how it relates to other algorithms, use the topic's visual with the same input values. Put facts like inventors, dates or related algorithms in the narration, not in labels.
+- Return null only if the scene has no connection to the video's topic. If the topic is a named algorithm or data structure with a matching library visual and the scene discusses that algorithm, its properties (stable, efficient, comparison-based), or its variants, use the topic's visual with the same input values. If a scene is about a different algorithm (for example merge-insertion sort or insertion sort in a merge sort video), don't use the topic's algorithm visual. Return null for it. Put facts like inventors, dates or related algorithms in the narration, not in labels.
 - Labels: max 3 words, UPPERCASE for node labels. Footnote: one factual sentence.
 - Always include a footnote of 'Illustrative values' on array, tree, chain and graph visuals.
 - Only use facts from the narration. Never invent numbers.
@@ -1949,16 +1950,55 @@ def _align_visual_data(scenes: list[dict]) -> list[tuple[dict, dict]]:
 
 _REUSABLE_VISUAL_TYPES = frozenset({"array", "tree", "chain", "graph"})
 
+# Canonical names for algorithms the narration or topic may mention. The visual
+# algorithm slugs (merge-sort, insertion-sort, ...) match these canonical names
+# so a scene about one algorithm never inherits another's topic visual.
+_ALGORITHM_NAMES: dict[str, str] = {
+    "bubble sort": "bubble-sort",
+    "selection sort": "selection-sort",
+    "insertion sort": "insertion-sort",
+    "merge insertion sort": "merge-insertion-sort",
+    "merge insertion": "merge-insertion-sort",
+    "merge sort": "merge-sort",
+    "quick sort": "quick-sort",
+    "heap sort": "heap-sort",
+    "shell sort": "shell-sort",
+    "counting sort": "counting-sort",
+    "radix sort": "radix-sort",
+    "bucket sort": "bucket-sort",
+    "tim sort": "tim-sort",
+    "binary search": "binary-search",
+    "linear search": "linear-search",
+    "depth first search": "depth-first-search",
+    "breadth first search": "breadth-first-search",
+    "dijkstra": "dijkstra",
+}
+
+
+def _named_algorithms(text: str) -> set[str]:
+    """Return the canonical algorithm names mentioned in text."""
+    normalized = re.sub(r"[\s_-]+", " ", text.casefold()).strip()
+    if not normalized:
+        return set()
+    return {
+        canonical
+        for name, canonical in _ALGORITHM_NAMES.items()
+        if re.search(rf"\b{re.escape(name)}\b", normalized)
+    }
+
 
 def _reuse_topic_visuals(
     scenes: list[dict],
     planner_results: list[dict[str, Any] | None],
+    topic: str = "",
 ) -> None:
     """Copy an existing algorithm visual onto middle scenes the planner left null.
 
     The first non-"none" array/tree/chain/graph visual in the video is treated
     as the topic visual. Opening and closing scenes are left alone, and contrast
-    scenes are skipped because they describe a different idea.
+    scenes are skipped because they describe a different idea. A scene whose
+    narration names an algorithm other than the topic's is also skipped: in a
+    merge sort video, for example, an insertion sort scene must stay null.
     """
     source = None
     for scene in scenes:
@@ -1974,6 +2014,12 @@ def _reuse_topic_visuals(
     if source is None:
         return
 
+    topic_algorithms = _named_algorithms(topic)
+    if not topic_algorithms:
+        source_algorithm = source.get("algorithm")
+        if isinstance(source_algorithm, str):
+            topic_algorithms = {source_algorithm}
+
     last_index = len(scenes) - 1
     for index, scene in enumerate(scenes):
         if index == 0 or index == last_index:
@@ -1986,6 +2032,9 @@ def _reuse_topic_visuals(
         if scene.get("processKind") == "contrast":
             continue
         if scene.get("visual") is not None:
+            continue
+        narration_algorithms = _named_algorithms(str(scene.get("narration", "")))
+        if narration_algorithms - topic_algorithms:
             continue
 
         reused = copy.deepcopy(source)
@@ -2115,6 +2164,6 @@ def scene_planner_node(
                     if not check.get("ok"):
                         scene["visual"] = original
 
-        _reuse_topic_visuals(scenes, planner_results)
+        _reuse_topic_visuals(scenes, planner_results, topic)
 
     return {"scenes": scenes}

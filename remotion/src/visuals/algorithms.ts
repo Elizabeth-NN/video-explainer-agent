@@ -21,6 +21,7 @@ export type ArrayFrame = {
   range?: [number, number];
   pointer?: number;
   note?: string;
+  stage?: "start" | "split" | "merge" | "sorted";
 };
 
 export const bubbleSort = (input: number[]): ArrayFrame[] => {
@@ -85,7 +86,7 @@ export const insertionSort = (input: number[]): ArrayFrame[] => {
 /** Merge sort. Frames show each split, then each merged range marked done. */
 export const mergeSort = (input: number[]): ArrayFrame[] => {
   const a = [...input];
-  const frames: ArrayFrame[] = [{ values: [...a], note: "Unsorted" }];
+  const frames: ArrayFrame[] = [{ values: [...a], note: "Unsorted", stage: "start" }];
 
   const indexes = (lo: number, hi: number) =>
     Array.from({ length: hi - lo + 1 }, (_, k) => lo + k);
@@ -98,6 +99,7 @@ export const mergeSort = (input: number[]): ArrayFrame[] => {
       values: [...a],
       range: [lo, hi],
       note: `Split indexes ${lo} to ${hi} into two halves`,
+      stage: "split",
     });
 
     sort(lo, mid);
@@ -121,11 +123,12 @@ export const mergeSort = (input: number[]): ArrayFrame[] => {
       range: [lo, hi],
       done: indexes(lo, hi),
       note: `Merge indexes ${lo} to ${hi}`,
+      stage: "merge",
     });
   };
 
   sort(0, a.length - 1);
-  frames.push({ values: [...a], done: a.map((_, i) => i), note: "Sorted" });
+  frames.push({ values: [...a], done: a.map((_, i) => i), note: "Sorted", stage: "sorted" });
   return frames;
 };
 

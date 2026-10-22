@@ -11,7 +11,7 @@ export const HINTS = {
   {"type":"array","values":[5,2,9,1,7],"algorithm":"bubble-sort","target":7}
   values: 2-10 non-negative numbers. algorithm: ${ARRAY_ALGORITHMS.join(" | ")}.
   target: only for the two searches. NEVER write the steps; the renderer computes them.
-  phase (binary-search only): overview | midpoint | elimination | found | not-found, to show one stage per scene.`,
+  phase (binary-search: overview | midpoint | elimination | found | not-found; merge-sort: overview | split | merge | sorted), to show one stage per scene.`,
 
   tree:
     `tree: a binary search tree built by inserting values in order. Use for BSTs, tree traversal, heaps-as-trees, hierarchy of depth.

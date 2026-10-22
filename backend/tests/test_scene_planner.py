@@ -1395,3 +1395,71 @@ def test_reuse_does_not_cross_copy_bubble_and_merge_sort_visuals(monkeypatch):
     assert scenes[0]["visual"]["values"] == [3, 1, 2]
     assert scenes[1]["visual"]["algorithm"] == "merge-sort"
     assert scenes[1]["visual"]["values"] == [9, 5, 7]
+
+
+def test_planner_prompt_requires_scene_specific_phases():
+    from app.graph.scene_planner import _PLANNER_SYSTEM
+
+    assert (
+        "When several scenes use the same algorithm visual, give each a "
+        "different phase that matches what its narration says: overview for "
+        "introductions, split for dividing the list, merge for combining "
+        "sorted parts, sorted for the finished result. Don't use the same "
+        "phase for more than two scenes."
+    ) in _PLANNER_SYSTEM
+
+
+def test_planner_prompt_returns_null_for_a_different_algorithm():
+    from app.graph.scene_planner import _PLANNER_SYSTEM
+
+    assert (
+        "If a scene is about a different algorithm (for example "
+        "merge-insertion sort or insertion sort in a merge sort video), "
+        "don't use the topic's algorithm visual. Return null for it."
+    ) in _PLANNER_SYSTEM
+    assert "how it relates to other algorithms" not in _PLANNER_SYSTEM
+
+
+def test_reuse_topic_visual_skips_scene_naming_another_algorithm(monkeypatch):
+    from app.graph import scene_planner
+
+    plans = [
+        {
+            "concept": "Merge sort splitting",
+            "processKind": "algorithm",
+            "visual": {
+                "type": "array",
+                "algorithm": "merge-sort",
+                "values": [5, 2, 9],
+                "phase": "split",
+            },
+        },
+        {"concept": "Insertion sort", "processKind": "algorithm", "visual": None},
+        {"concept": "Merge sort merging", "processKind": "algorithm", "visual": None},
+        {"concept": "Closing", "processKind": "algorithm", "visual": None},
+    ]
+
+    monkeypatch.setattr(
+        scene_planner,
+        "_call_gemini_planner",
+        lambda scenes, topic: plans,
+    )
+
+    result = scene_planner.scene_planner_node({
+        "topic": "merge sort",
+        "category": "cs",
+        "script": (
+            "Merge sort splits the list. "
+            "Insertion sort builds a sorted prefix. "
+            "Merge sort combines the sorted parts. "
+            "The result is ordered."
+        ),
+        "approved": True,
+    }, use_gemini_planner=True)
+
+    scenes = result["scenes"]
+
+    assert "visual" not in scenes[1]
+    assert scenes[2]["visual"]["algorithm"] == "merge-sort"
+    assert scenes[2]["visual"]["values"] == [5, 2, 9]
+    assert "phase" not in scenes[2]["visual"]

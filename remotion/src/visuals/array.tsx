@@ -20,12 +20,33 @@ export const arraySchema = z.object({
     "elimination",
     "found",
     "not-found",
+    "split",
+    "merge",
+    "sorted",
   ]).optional(),
 });
 export type ArraySpec = z.infer<typeof arraySchema>;
 
-const arrayTrace = (spec: ArraySpec): ArrayFrame[] => {
+const MERGE_STAGE_BY_PHASE: Partial<
+  Record<NonNullable<ArraySpec["phase"]>, ArrayFrame["stage"]>
+> = {
+  overview: "start",
+  split: "split",
+  merge: "merge",
+  sorted: "sorted",
+};
+
+export const arrayTrace = (spec: ArraySpec): ArrayFrame[] => {
   const target = spec.target ?? spec.values[Math.floor(spec.values.length / 2)];
+
+  if (spec.algorithm === "merge-sort" && spec.phase) {
+    const frames = mergeSort(spec.values);
+    const stage = MERGE_STAGE_BY_PHASE[spec.phase];
+    const matching = stage
+      ? frames.filter((frame) => frame.stage === stage)
+      : [];
+    return matching.length ? matching : frames;
+  }
 
   if (spec.algorithm === "binary-search" && spec.phase) {
     const frames = binarySearch(spec.values, target);
